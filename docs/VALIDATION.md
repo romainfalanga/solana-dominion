@@ -8,8 +8,8 @@
 | R4 Phantom | Implémenté, essai wallet réel restant | SDK + connexion UI ; absence de Phantom testée ; signatures réelles devnet nécessitent wallet utilisateur et déploiement |
 | R5 Mint configurable | Vérifié par tests API | QUOTE_MINT/QUOTE_SYMBOL, réseau, ownership, freeze ; ancien monde non migré |
 | R6 Cloudflare | Publié en démonstration | Worker solana-dominion, API/config en demo ; aucun actif réel |
-| R7 GitHub | Bloqué par droits externes | Création refusée 403 via REST et GraphQL ; dépôt privé vide demandé au propriétaire |
-| R8 Liaison GitHub→Cloudflare | Préparée, non activée | CI, config et dry-run deploy validé ; dépend du dépôt GitHub |
+| R7 GitHub | Vérifié | Code poussé sur main ; CI GitHub web/browser/rust réussie, run 44076474495 |
+| R8 Liaison GitHub→Cloudflare | Configurée, déploiement à vérifier | Connexion dépôt et déclencheur Workers Builds créés pour main |
 | R9 Tests et sécurité | Réalisés dans périmètre décrit | 22 tests TypeScript/API, 6 tests Rust, 9 contrôles local-validator ; aucun audit externe |
 | R10 Économie mainnet | Non prête | Prix spot manipulable en faible liquidité ; gouvernance/indexation/admission à définir et vérifier |
 

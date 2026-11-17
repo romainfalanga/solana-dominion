@@ -2,18 +2,18 @@
 
 ## Ce que Romain doit faire maintenant
 
-La démonstration fonctionne sans token ni wallet. La création du dépôt GitHub a été refusée par l’intégration (403) : créer un dépôt privé vide `romainfalanga/solana-dominion`, puis autoriser l’intégration GitHub à y accéder. Aucun secret à envoyer dans la conversation.
+La démonstration fonctionne sans token ni wallet. Le code est publié dans `romainfalanga/solana-dominion`, dépôt créé par le propriétaire. Aucun secret à envoyer dans la conversation.
 
 ## GitHub et Cloudflare
 
-Le dépôt contient `cloudflare.config.ts`, le lockfile et la CI. Une fois le dépôt accessible, pousser `main` puis dans Cloudflare Workers & Pages → solana-dominion → Settings → Builds, connecter ce dépôt GitHub, branche `main`.
+Le dépôt contient `cloudflare.config.ts`, le lockfile et la CI. La connexion Workers Builds est configurée sur la branche `main` du dépôt GitHub. Le déclencheur est nommé « Dominion — main ».
 
 - Build : `npm ci && npm test && npm run build`
 - Deploy : `npm run deploy` (équivalent `cf deploy --prebuilt --mode production`)
 - Racine : `/`
 - Node : 24
 
-Le token d’accès de build doit être limité au Worker concerné lorsque possible ; utiliser le mécanisme de token Workers Builds. Ne pas réutiliser aveuglément un token appartenant à une autre application. Les push suivants doivent déclencher un build dont le résultat est contrôlé.
+Le déclencheur réutilise l’autorisation Workers Builds existante « potentielmemecoin build token », conservée dans Cloudflare ; aucun secret n’a été copié dans GitHub. L’API OAuth ne permet pas de créer ou inspecter les tokens personnels. Préférer un token dédié à Dominion lors de la prochaine configuration des droits ; ne pas révoquer le token partagé sans vérifier ses autres usages. Le premier déploiement est vérifié avant de considérer l’automatisation opérationnelle.
 
 ## Première session Solana devnet
 
