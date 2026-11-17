@@ -16,7 +16,7 @@ Avec `--migration` : achat partiel atteignant le seuil, migration permissionless
 
 ## Application
 
-82 tests automatisés réussis : calcul économique, règles de compte, configurations, transactions incertaines, reçus expirés, preuves de lancement, politique historique, valorisation, token plateforme, rotation et conditions de migration. Les tests du registre utilisent les fixtures réelles et SQLite avec les migrations D1.
+87 tests automatisés réussis : calcul économique, règles de compte, configurations, transactions incertaines, reçus expirés, preuves de lancement, politique historique, valorisation, token plateforme, rotation et conditions de migration. Les tests du registre utilisent les fixtures réelles et SQLite avec les migrations D1.
 
 Tests UI avec lectures simulées : carte prioritaire, logo, CA copiable, absence des barres et de la page classement retirées, règles sans statistiques, devis d’achat initial, rejet des réponses périmées, minimum reçu inchangé pour achat/vente, quotes historiques, bouton migration, mobile 390/320 pixels sans débordement.
 
@@ -31,3 +31,7 @@ Le bundle réel a passé le test Playwright avec le SDK DBC réel et un RPC de l
 ## Token de paiement Pump avant graduation
 
 Le mint CHOULE est encore sur une courbe Pump et DexScreener ne fournit pas de paire pour ce mint. Le serveur vérifie le PDA, le programme propriétaire, le discriminateur, le layout, la quote SOL, les réserves et l’absence de graduation, puis convertit le prix virtuel via une paire WSOL/USDC liquide. Fixture mainnet publique conservée, sans clé privée. La capitalisation utilise l’offre actuelle du mint ; elle est notionnelle et ne mesure pas la liquidité disponible. Sans cours SOL/USD vérifiable, aucun prix USD n’est inventé.
+
+## Limitation du RPC public
+
+Le contrôle en production a identifié des réponses HTTP 429 à getMultipleAccounts sur Publicnode. Le serveur bascule ces lectures vers le RPC officiel mainnet, vérifie son genesis et conserve les paramètres de finalité/minContextSlot. Le délai Retry-After est respecté par fournisseur et méthode ; les endpoints privés et personnalisés ne sont pas redirigés. Les méthodes d’envoi de transaction sont refusées par ce lecteur serveur.
