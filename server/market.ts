@@ -10,10 +10,15 @@ import { accountInfo,boundedJson,rpc } from './rpc';
 import { settings } from './settings';
 import {pumpQuotePrices,WRAPPED_SOL} from './pump';
 const COLORS = ['#60c2b1','#ad93e8','#ee9879','#7eb6df','#d9ba68','#d98eb7','#93bf78','#83a0e3'];
-interface DexPair { chainId?:string;pairAddress?:string;baseToken?:{address?:string};quoteToken?:{address?:string};priceUsd?:string;liquidity?:{usd?:number};priceChange?:{h24?:number} }
-function colorFor(mint: string): string {let value = 0;for (const c of mint) value = ((value * 31) + c.charCodeAt(0)) >>> 0;return COLORS[value % COLORS.length];}
-async function prices(mints: string[]): Promise<Map<string,{price:number;change:number|null}>> {
-  const selected = new Map<string,{price:number;change:number|null;liquidity:number;pair:string}>();
+interface DexPair { chainId?:string;pairAddress?:string;baseToken?:{address?:string;name?:unknown;symbol?:unknown};quoteToken?:{address?:string};priceUsd?:string;liquidity?:{usd?:number};priceChange?:{h24?:number} }
+export function colorFor(mint: string): string {let value = 0;for (const c of mint) value = ((value * 31) + c.charCodeAt(0)) >>> 0;return COLORS[value % COLORS.length];}
+export interface MarketQuote {price:number;change:number|null;name?:string;symbol?:string}
+function marketLabel(value:unknown,maximum:number):string|undefined {
+  if(typeof value!=='string'||/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/u.test(value))return undefined;
+  const label=Array.from(value.trim()).slice(0,maximum).join('');return label||undefined;
+}
+export async function prices(mints: string[]): Promise<Map<string,MarketQuote>> {
+  const selected = new Map<string,MarketQuote&{liquidity:number;pair:string}>();
   for (let start = 0;start < mints.length;start += 30) {
     const batch = mints.slice(start,start + 30),wanted = new Set(batch);
     // Documented endpoint: https://docs.dexscreener.com/api/reference, maximum 30 addresses.
@@ -35,14 +40,14 @@ async function prices(mints: string[]): Promise<Map<string,{price:number;change:
       const previous = selected.get(mint),pairAddress = pair.pairAddress || '';
       if (previous && (previous.liquidity > liquidity || (previous.liquidity === liquidity && previous.pair <= pairAddress))) continue;
       const change = pair.priceChange?.h24;
-      selected.set(mint,{price,liquidity,pair:pairAddress,change:typeof change === 'number' && Number.isFinite(change) ? change : null});
+      selected.set(mint,{price,liquidity,pair:pairAddress,name:marketLabel(pair.baseToken?.name,80),symbol:marketLabel(pair.baseToken?.symbol,24),change:typeof change === 'number' && Number.isFinite(change) ? change : null});
     }
   }
   return selected;
 }
-export async function readSnapshot(env: Env,config: PlatformConfig): Promise<Snapshot> {
+export async function readSnapshot(env: Env,config: PlatformConfig,registeredRows?:RegisteredLaunch[]): Promise<Snapshot> {
   const cfg = settings(env),db = database(env);
-  const rows = await db.prepare('SELECT * FROM launches WHERE cluster = ? ORDER BY created_at DESC,mint LIMIT 1001').bind(cfg.cluster).all<RegisteredLaunch>();
+  const rows = registeredRows ? {success:true,results:registeredRows} : await db.prepare('SELECT * FROM launches WHERE cluster = ? ORDER BY created_at DESC,mint LIMIT 1001').bind(cfg.cluster).all<RegisteredLaunch>();
   if (!rows.success || !rows.results) throw new PublicError('Le registre de tokens est indisponible.');
   if (rows.results.length > 1000) throw new PublicError('Le registre dépasse la capacité de cette version. Aucun territoire partiel n’est affiché.');
   let platformMint: PublicKey,platformProgram: PublicKey;

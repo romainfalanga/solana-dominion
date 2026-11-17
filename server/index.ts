@@ -2,6 +2,7 @@ import { PublicKey } from '@solana/web3.js';
 import { PublicError,database,type RegisteredLaunch,type Env,type Context } from './types';
 import { settings,resolveConfig,recordConfiguration } from './settings';
 import { readSnapshot } from './market';
+import {readWallet} from './wallet';
 import { registerLaunch,validateSignature } from './launches';
 import { registerCurveConfig } from './curves';
 export type { Env } from './types';
@@ -47,6 +48,11 @@ export default {
         if (cache) ctx.waitUntil(Promise.all(['/api/state','/api/territories'].map(path => cache.delete(cacheKey(url.origin,path,env)))));
       } else if (!['GET','HEAD'].includes(request.method)) response = json({error:'Méthode non autorisée.',code:'METHOD_NOT_ALLOWED'},405);
       else if (url.pathname === '/api/health') response = json({status:'ok',service:'solana-dominion',architecture:'meteora-dbc',version:'0.3.1'});
+      else if (url.pathname === '/api/wallet') {
+        if(url.searchParams.getAll('owner').length!==1||[...url.searchParams.keys()].some(key=>key!=='owner'))throw new PublicError('Un propriétaire de wallet est requis.',400,'INVALID_OWNER');
+        response=json(await readWallet(env,url.searchParams.get('owner')!));
+        response.headers.set('Cache-Control','private, no-store');
+      }
       else if (url.pathname.startsWith('/api/metadata/')) {
         let mint: string;try {mint = new PublicKey(url.pathname.slice('/api/metadata/'.length)).toBase58();} catch {throw new PublicError('Adresse de token non valide.',400,'INVALID_MINT');}
         const row = await database(env).prepare('SELECT * FROM launches WHERE cluster = ? AND mint = ?').bind(settings(env).cluster,mint).first<RegisteredLaunch>();
@@ -70,7 +76,7 @@ export default {
       if (error instanceof PublicError && error.code === 'TRANSACTION_PENDING') response.headers.set('Retry-After','4');
     }
     const headers = new Headers(response.headers);security.forEach((value,key) => headers.set(key,value));
-    if (url.pathname.startsWith('/api/')) headers.set('Cache-Control','no-store');
+    if (url.pathname.startsWith('/api/')) headers.set('Cache-Control',url.pathname==='/api/wallet'?'private, no-store':'no-store');
     if (response.status === 405) headers.set('Allow',['/api/launches','/api/curve-config'].includes(url.pathname) ? 'POST' : 'GET, HEAD');
     return new Response(request.method === 'HEAD' ? null : response.body,{status:response.status,headers});
   },

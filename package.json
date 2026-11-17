@@ -10,7 +10,7 @@
     "check": "tsc -b",
     "preview": "vite preview --host 0.0.0.0",
     "deploy": "cf deploy --prebuilt --mode production",
-    "test:ui": "node scripts/test-ui.mjs",
+    "test:ui": "node scripts/test-ui.mjs && node scripts/test-wallet-ui.mjs",
     "test:standard": "node scripts/test-standard-launch.mjs",
     "test:dbc": "node scripts/test-dbc-local.mjs"
   },

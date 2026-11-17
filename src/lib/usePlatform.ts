@@ -23,7 +23,7 @@ async function register(receipt:LaunchReceipt,rpcUrl:string):Promise<boolean>{
 }
 function readDemo():Snapshot{try{const data=JSON.parse(localStorage.getItem(STORE)||'null');if(data?.source==='demo'&&Array.isArray(data.tokens)&&data.tokens.length<=100)return data;}catch{}return initialDemo();}
 async function stateRequest(){const res=await fetch('/api/state',{signal:AbortSignal.timeout(20000)});if(!res.ok){const data=await res.json().catch(()=>({}));throw new Error(data.error||'Impossible de vérifier les données Solana.');}return res.json() as Promise<{config:PlatformConfig;snapshot:Snapshot}>;}
-export function usePlatform(){
+export function usePlatform(polling=true){
  const [config,setConfig]=useState<PlatformConfig>({...demoConfig,mode:import.meta.env.DEV?'demo':'mainnet-beta',quoteSymbol:import.meta.env.DEV?'DOM':'…',creationEnabled:false}),[snapshot,setSnapshot]=useState<Snapshot>({tokens:[],updatedAt:'',slot:null,source:'chain',currency:'USD'}),[loading,setLoading]=useState(true),[error,setError]=useState<string|null>(null),[wallet,setWallet]=useState<string|null>(null),[busy,setBusy]=useState(false),[notice,setNotice]=useState<string|null>(null);
  const ready=useRef(false),lock=useRef(false),refreshing=useRef(false),configRef=useRef(config);
  const refresh=useCallback(async()=>{
@@ -35,7 +35,7 @@ export function usePlatform(){
   if(state.config.mode!=='demo'&&pending().length){try{if(await register(pending()[0],state.config.rpcUrl))setNotice('Le token créé est enregistré. Actualise la carte pour le retrouver.');}catch(e){setNotice(e instanceof Error?e.message:'Enregistrement différé. Le reçu est conservé.');}}
  }catch(e){ready.current=false;setError(e instanceof Error?e.message:'Service indisponible.');}finally{setLoading(false);refreshing.current=false;}
  },[]);
- useEffect(()=>{void refresh();const timer=setInterval(()=>{if(document.visibilityState==='visible'&&!lock.current)void refresh();},15000);return()=>clearInterval(timer);},[refresh]);
+ useEffect(()=>{if(!polling)return;void refresh();const timer=setInterval(()=>{if(document.visibilityState==='visible'&&!lock.current)void refresh();},15000);return()=>clearInterval(timer);},[refresh,polling]);
  useEffect(()=>{const provider=window.phantom?.solana??window.solana;const change=(p:import('@solana/web3.js').PublicKey|null)=>setWallet(p?.toBase58()??null);const disconnect=()=>setWallet(null);provider?.on?.('accountChanged',change);provider?.on?.('disconnect',disconnect);return()=>{provider?.removeListener?.('accountChanged',change);provider?.removeListener?.('disconnect',disconnect);};},[]);
  async function execute(action:()=>Promise<void>){if(lock.current)return;lock.current=true;setBusy(true);setError(null);try{await action();}catch(e){setError(e instanceof Error?e.message:'Action interrompue.');throw e;}finally{lock.current=false;setBusy(false);}}
  useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(null),10000);return()=>clearTimeout(timer);},[notice]);

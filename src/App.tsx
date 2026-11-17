@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowDownLeft, ArrowUpRight, Check, ChevronRight, Compass, Crown, ExternalLink, Globe2, Layers3, Maximize2, Plus, RefreshCw, Search,  Wallet, X } from 'lucide-react';
 import { usePlatform } from './lib/usePlatform';
+import WalletPage from './WalletPage';
 import { layoutTerritories } from './lib/territories';
 import type { Token, PlatformConfig, TradeInput } from './types';
 import { parseUnits } from './lib/math';
@@ -10,9 +11,9 @@ const percent = (n: number) => new Intl.NumberFormat('fr-FR', { maximumFractionD
 const shortAddress = (a: string) => a.length > 15 ? `${a.slice(0, 5)}…${a.slice(-5)}` : a;
 
 export default function App() {
-  const platform = usePlatform();
+  const [page, setPage] = useState<'map' | 'wallet' | 'rules'>('map');
+  const platform = usePlatform(page !== 'wallet');
   const { config, snapshot, loading, error, wallet, busy, notice } = platform;
-  const [page, setPage] = useState<'map' | 'rules'>('map');
   const [selectedMint, setSelectedMint] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -70,17 +71,19 @@ export default function App() {
   return <div className="app-shell">
     <header className="topbar">
       <a className="brand" href="#" onClick={e => { e.preventDefault(); setPage('map'); }} aria-label="Dominion, carte des territoires"><img className="brand-mark brand-logo" src="/brand/dominion-token.png" alt="" /><span>dominion<span className="brand-dot">.</span></span></a>
-      <nav className="main-nav" aria-label="Navigation principale">{([{id:"map",label:"Le territoire"},{id:"rules",label:"Les règles"}] as const).map(item=><button key={item.id} className={page===item.id?"active":""} onClick={()=>setPage(item.id)}>{item.label}</button>)}</nav><div className="topbar-middle"><span className="network-dot" />Solana<span className="network-name">{demo ? 'Démo' : config.mode === 'devnet' ? 'Devnet' : 'Mainnet'}</span></div>
+      <nav className="main-nav" aria-label="Navigation principale">{([{id:"map",label:"Le territoire"},{id:"wallet",label:"Wallet"},{id:"rules",label:"Les règles"}] as const).map(item=><button key={item.id} className={page===item.id?"active":""} onClick={()=>{setPage(item.id);setLocalError(null);}}>{item.label}</button>)}</nav><div className="topbar-middle"><span className="network-dot" />Solana<span className="network-name">{demo ? 'Démo' : config.mode === 'devnet' ? 'Devnet' : 'Mainnet'}</span></div>
       <div className="header-actions"><button className="button button-quiet header-create" onClick={() => setCreateOpen(true)}><Plus size={16} />Créer un token</button><button className="button wallet-button" disabled={busy} onClick={() => void action(wallet ? platform.disconnect : platform.connect)}><Wallet size={17} /><span>{wallet ? shortAddress(wallet) : 'Connecter Phantom'}</span>{wallet && <span className="connected-dot" />}</button></div>
     </header>
 
     <div className="workspace">
       <main className="main-content">
-        {demo && <div className="demo-banner"><span><span className="demo-tag">Démo</span>Explorez le jeu avec des tokens fictifs. Aucun fonds réel n’est utilisé.</span><button onClick={() => { platform.resetDemo(); setSelectedMint(null); }}>Réinitialiser</button></div>}
-        {(error || localError) && <div className="message message-error" role="alert"><span>{localError || error}</span>{localError && <button aria-label="Fermer le message" onClick={() => setLocalError(null)}><X size={16} /></button>}</div>}
-        {notice && noticeVisible && <div className="message message-success" role="status"><Check size={17} /><span>{notice}</span><button type="button" aria-label="Fermer la notification" onClick={() => setNoticeVisible(false)}><X size={16} /></button></div>}
+        {demo && page !== 'wallet' && <div className="demo-banner"><span><span className="demo-tag">Démo</span>Explorez le jeu avec des tokens fictifs. Aucun fonds réel n’est utilisé.</span><button onClick={() => { platform.resetDemo(); setSelectedMint(null); }}>Réinitialiser</button></div>}
+        {(localError || (page !== 'wallet' && error)) && <div className="message message-error" role="alert"><span>{localError || error}</span>{localError && <button aria-label="Fermer le message" onClick={() => setLocalError(null)}><X size={16} /></button>}</div>}
+        {notice && noticeVisible && page !== 'wallet' && <div className="message message-success" role="status"><Check size={17} /><span>{notice}</span><button type="button" aria-label="Fermer la notification" onClick={() => setNoticeVisible(false)}><X size={16} /></button></div>}
 
-        <div className="map-heading"><div><h1>{page === 'map' ? 'Le territoire.' : 'Les règles.'}</h1><p>{page === 'map' ? 'Une carte, tous les tokens. La capitalisation fixe les frontières.' : 'Les paramètres du launchpad et du calcul des territoires.'}</p></div><button className="button button-primary" onClick={() => setCreateOpen(true)}><Plus size={18} />Créer un token</button></div>
+        <div className="map-heading"><div><h1>{page === 'map' ? 'Le territoire.' : page === 'wallet' ? 'Wallet.' : 'Les règles.'}</h1><p>{page === 'map' ? 'Une carte, tous les tokens. La capitalisation fixe les frontières.' : page === 'wallet' ? 'Vos positions, réparties selon leur valeur en dollars.' : 'Les paramètres du launchpad et du calcul des territoires.'}</p></div>{page !== 'wallet' && <button className="button button-primary" onClick={() => setCreateOpen(true)}><Plus size={18} />Créer un token</button>}</div>
+
+        {page === 'wallet' && <WalletPage owner={wallet} onConnect={() => action(platform.connect)} busy={busy} quoteMint={config.quoteMint} />}
 
         {page === 'map' && <section className="world-stats" aria-label="Statistiques du monde"><div><span>Capitalisation du monde</span><strong>{compact(total)} <small>{currency}</small></strong></div><div><span>Tokens créés</span><strong>{tokens.length.toString().padStart(2, '0')} <small>dont {activeCount} sur la carte</small></strong></div><div><span>Territoire occupé</span><strong>{total > 0 ? '100' : '0'}<small> % du monde</small></strong></div><div className="world-status"><span className={demo ? 'status-dot demo' : 'status-dot'} /><div><strong>{demo ? 'Simulation locale' : 'Données Solana'}</strong><span>{demo ? 'À vous de jouer' : snapshot.updatedAt ? `Actualisé à ${new Date(snapshot.updatedAt).toLocaleTimeString('fr-FR')}` : 'En attente du réseau'}</span></div></div></section>}
 
