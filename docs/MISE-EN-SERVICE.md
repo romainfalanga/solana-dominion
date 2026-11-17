@@ -27,3 +27,7 @@ Les confirmations incertaines conservent leur reçu. Actualiser ou reprendre l�
 D1 : migrations `0001_registry.sql` puis `0002_curves.sql`. Elles préservent le registre historique. Build : `npm test && npm run build` ; déploiement : `npm run deploy`, sans option force persistante. Les migrations doivent précéder le code qui utilise les colonnes correspondantes.
 
 RPC public : quotas et disponibilité externes ; une indisponibilité doit produire un état explicite, jamais une carte fictive. Pour une charge importante, renseigner un RPC adapté via les variables Cloudflare prévues.
+
+## Accès RPC serveur dédié
+
+Si les RPC anonymes restent limités, créer un endpoint mainnet propre au projet (par exemple l’offre gratuite Helius), puis ajouter son URL complète dans Cloudflare : Workers & Pages → solana-dominion → Settings → Variables and Secrets → Add → type Secret → nom `SOLANA_RPC_URL`. Ne pas mettre cette URL contenant une clé dans GitHub. Le serveur vérifie le réseau avant de lire les comptes ; cet accès ne permet pas de signer avec le wallet. `PUBLIC_SOLANA_RPC_URL` reste l’URL publique utilisée par le navigateur. Après ajout, vérifier `/api/config` puis `/api/state` et le formulaire d’achat avant de considérer la validation publique terminée.

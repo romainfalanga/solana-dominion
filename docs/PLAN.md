@@ -18,7 +18,7 @@ Réutiliser Meteora DBC déjà déployé permet une quote personnalisée Token-2
 
 Le serveur accepte des signatures publiques, vérifie la finalisation, le programme, les instructions, les comptes, la politique, les soldes et les autorités. D1 conserve l’historique des configurations et les marchés. Les anciennes quotes restent utilisables après rotation. Les montants ne sont pas acceptés sur la foi du navigateur.
 
-Le token plateforme rejoint le registre de lecture sans inscription artificielle. Capitalisations en USD : prix de courbe × cours de quote × offre actuelle ; pour la plateforme et les marchés migrés, cours externe liquide. Les proportions incluent tous les tokens valorisables, sans effet de la recherche sur le dénominateur.
+Le token plateforme rejoint le registre de lecture sans inscription artificielle. Capitalisations en USD : prix de courbe × cours de quote × offre actuelle ; pour la plateforme et les marchés migrés, cours externe liquide. Un token de plateforme Pump avant graduation est valorisé depuis sa courbe vérifiée et une cotation SOL/USD ; la valeur notionnelle est distincte de la liquidité. Les proportions incluent tous les tokens valorisables, sans effet de la recherche sur le dénominateur.
 
 ## Déploiement et coûts
 
@@ -30,3 +30,6 @@ Cloudflare Worker + D1, build automatique GitHub. SDK DBC chargé à la demande 
 - https://github.com/MeteoraAg/docs/blob/main/core-products/dbc/launch-configurations.mdx
 - https://github.com/MeteoraAg/dynamic-bonding-curve-sdk
 - https://github.com/raydium-io/raydium-docs-v1/blob/main/products/launchlab/global-config.mdx
+
+- https://github.com/pump-fun/pump-public-docs/blob/main/idl/pump.json
+- https://github.com/pump-fun/pump-public-docs/blob/main/docs/PUMP_PROGRAM_README.md

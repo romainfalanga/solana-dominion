@@ -15,7 +15,7 @@ describe('read-only public mainnet RPC failover',()=>{
   await rpc(primary,'getMultipleAccounts',params);expect(calls).toHaveLength(4);expect(calls.at(-1)).toEqual({url:official,method:'getMultipleAccounts',params});
  });
  it('respects Retry-After per method and resumes primary when the cooldown expires',async()=>{
-  vi.useFakeTimers();vi.setSystemTime(new Date('2026-11-17T00:00:00Z'));let failures=0;
+  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-11-17T00:00:00Z'));let failures=0;
   transport((url,method)=>url===primary&&method==='getMultipleAccounts'&&failures++===0?new Response('',{status:429,headers:{'Retry-After':'90'}}):answer(method==='getGenesisHash'?genesis:null));
   const {rpc}=await import('../server/rpc');await rpc(primary,'getMultipleAccounts',[]);await rpc(primary,'getAccountInfo',[]);
   expect(calls.at(-1)?.url).toBe(primary);vi.setSystemTime(Date.now()+31_000);await rpc(primary,'getMultipleAccounts',[]);expect(calls.at(-1)?.url).toBe(official);
@@ -33,7 +33,7 @@ describe('read-only public mainnet RPC failover',()=>{
   await expect(rpc(primary,'sendTransaction',['signed-data'])).rejects.toMatchObject({code:'RPC_METHOD_NOT_ALLOWED'});expect(calls).toHaveLength(count);
  });
  it('uses a30-second default cooldown for503 and revalidates genesis after its short cache expires',async()=>{
-  vi.useFakeTimers();vi.setSystemTime(new Date('2026-11-17T00:00:00Z'));
+  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-11-17T00:00:00Z'));
   transport((url,method)=>url===primary?new Response('',{status:503}):answer(method==='getGenesisHash'?genesis:null));
   const {rpc}=await import('../server/rpc');await rpc(primary,'getTransaction',['receipt']);vi.setSystemTime(Date.now()+20_000);await rpc(primary,'getTransaction',['receipt']);
   expect(calls.filter(c=>c.url===primary)).toHaveLength(1);vi.setSystemTime(Date.now()+41_000);await rpc(primary,'getTransaction',['receipt']);
@@ -52,7 +52,7 @@ describe('small rate-limited account batch decomposition',()=>{
     const index=['a','b','c'].indexOf(body.params[0]);return answer({context:{slot:[103,101,105][index]},value:index===1?null:{address:body.params[0]}});
   }));
   const {rpc}=await import('../server/rpc');const result=await rpc(primary,'getMultipleAccounts',[['a','b','c'],options]);
-  expect(result).toEqual({context:{slot:101},value:[{address:'a'},null,{address:'c'}]});expect(peak).toBe(2);
+  expect(result).toEqual({context:{slot:101},value:[{address:'a'},null,{address:'c'}]});expect(peak).toBeLessThanOrEqual(2);
   await rpc(primary,'getMultipleAccounts',[['a','b','c'],options]);expect(calls.filter(call=>call.method==='getMultipleAccounts')).toHaveLength(1);
  });
  it('rejects stale individual context and never decomposes403 or large batches',async()=>{
@@ -61,5 +61,32 @@ describe('small rate-limited account batch decomposition',()=>{
   vi.resetModules();calls=[];transport(()=>new Response('',{status:403}));const other=await import('../server/rpc');
   await expect(other.rpc(primary,'getMultipleAccounts',[['a'],{minContextSlot:100}])).rejects.toMatchObject({code:'SOLANA_RPC_UNAVAILABLE'});expect(calls.map(call=>call.method)).toEqual(['getMultipleAccounts']);
   // The separate failover test uses four accounts and asserts official RPC batching.
+ });
+});
+
+describe('public RPC burst control',()=>{
+ it('spaces distinct starts by600ms and shares identical in-flight reads without caching results',async()=>{
+  vi.useFakeTimers();vi.setSystemTime(new Date('2026-11-17T00:00:00Z'));const starts:number[]=[];const releases:(()=>void)[]=[];
+  vi.stubGlobal('fetch',vi.fn(async()=>{starts.push(Date.now());await new Promise<void>(resolve=>releases.push(resolve));return answer({value:starts.length});}));
+  const {rpc}=await import('../server/rpc');
+  const a=rpc(primary,'getAccountInfo',['a']),same=rpc(primary,'getAccountInfo',['a']),b=rpc(primary,'getAccountInfo',['b']),c=rpc(primary,'getTransaction',['receipt']);
+  await vi.advanceTimersByTimeAsync(0);expect(starts).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(599);expect(starts).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(1);expect(starts).toHaveLength(2);
+  await vi.advanceTimersByTimeAsync(600);expect(starts).toHaveLength(3);expect(starts[1]-starts[0]).toBe(600);expect(starts[2]-starts[1]).toBe(600);
+  releases.forEach(resolve=>resolve());const [first,shared]=await Promise.all([a,same,b,c]);expect(first).toEqual(shared);expect(first).not.toBe(shared);
+  const later=rpc(primary,'getAccountInfo',['a']);await vi.advanceTimersByTimeAsync(600);expect(starts).toHaveLength(4);releases[3]();await later;
+ });
+ it('does not throttle or coalesce custom RPC endpoints',async()=>{
+  vi.useFakeTimers();const releases:(()=>void)[]=[];vi.stubGlobal('fetch',vi.fn(async()=>{await new Promise<void>(resolve=>releases.push(resolve));return answer(null);}));
+  const {rpc}=await import('../server/rpc');const first=rpc('https://custom.invalid/','getAccountInfo',['mint']),second=rpc('https://custom.invalid/','getAccountInfo',['mint']);
+  expect(fetch).toHaveBeenCalledTimes(2);releases.forEach(resolve=>resolve());await Promise.all([first,second]);
+ });
+ it('suppresses an official403 for five minutes without claiming backup availability',async()=>{
+  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-11-17T00:00:00Z'));
+  transport(url=>new Response('',{status:url===primary?429:403}));const {rpc}=await import('../server/rpc');
+  await expect(rpc(primary,'getTransaction',['one'])).rejects.toMatchObject({code:'SOLANA_RPC_BACKUP_UNAVAILABLE'});
+  await expect(rpc(primary,'getTransaction',['two'])).rejects.toMatchObject({code:'SOLANA_RPC_BACKUP_UNAVAILABLE'});expect(calls.filter(call=>call.url===official)).toHaveLength(1);
+  vi.setSystemTime(Date.now()+300_001);await expect(rpc(primary,'getTransaction',['three'])).rejects.toMatchObject({code:'SOLANA_RPC_BACKUP_UNAVAILABLE'});expect(calls.filter(call=>call.url===official)).toHaveLength(2);
  });
 });

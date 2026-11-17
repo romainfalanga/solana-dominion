@@ -22,6 +22,19 @@ const READ_METHODS = new Set(['getAccountInfo','getMultipleAccounts','getTransac
 const TRANSIENT = new Set([429,502,503,504]);
 const publicCooldown = new Map<string,{until:number;status:number}>();
 let officialVerifiedUntil = 0;
+let officialBlockedUntil = 0;
+let publicLastStart = Number.NEGATIVE_INFINITY;
+let publicStartQueue:Promise<void> = Promise.resolve();
+const publicInFlight = new Map<string,Promise<unknown>>();
+async function pacePublicStart():Promise<void> {
+  const turn=publicStartQueue.then(async()=>{
+    const delay=600-(Date.now()-publicLastStart);
+    if(delay>0)await new Promise(resolve=>setTimeout(resolve,delay));
+    publicLastStart=Date.now();
+  });
+  publicStartQueue=turn.catch(()=>{});
+  await turn;
+}
 let officialVerification:Promise<void>|undefined;
 function unavailable(method:string,status:number,provider:string):never {
   console.error(JSON.stringify({event:'upstream_http_error',provider,method,status}));
@@ -33,15 +46,20 @@ function retryAt(response:Response):number {
   return Date.now()+30_000;
 }
 async function requestRpc(endpoint:string,method:string,params:unknown[]):Promise<Response> {
+  if(checkedUrl(endpoint)===PUBLIC_MAINNET)await pacePublicStart();
   return fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(8_000)});
 }
 async function rpcResult<T>(response:Response,method:string,provider:string):Promise<T> {
-  if(!response.ok)unavailable(method,response.status,provider);
+  if(!response.ok){
+    if(provider==='solana-official'&&response.status===403)officialBlockedUntil=Date.now()+300_000;
+    unavailable(method,response.status,provider);
+  }
   const envelope=await boundedJson<{result?:T;error?:unknown}>(response);
   if(envelope.error||envelope.result===undefined)throw new PublicError('Lecture Solana impossible. Réessayez dans quelques instants.');
   return envelope.result;
 }
 async function verifyOfficialMainnet():Promise<void> {
+  if(Date.now()<officialBlockedUntil)throw new PublicError('Le RPC de secours Solana est temporairement inaccessible.',503,'SOLANA_RPC_BACKUP_UNAVAILABLE');
   if(Date.now()<officialVerifiedUntil)return;
   if(!officialVerification){
     officialVerification=(async()=>{
@@ -76,7 +94,7 @@ async function individualAccounts<T>(endpoint:string,params:[string[],Record<str
   }
   return {context:{slot:minimumSlot},value:values} as T;
 }
-export async function rpc<T>(endpoint: string,method: string,params: unknown[]): Promise<T> {
+async function performRpc<T>(endpoint: string,method: string,params: unknown[]): Promise<T> {
   // This server verifies public chain state only; it never broadcasts transactions.
   if(!READ_METHODS.has(method))throw new PublicError('Méthode RPC non autorisée.',400,'RPC_METHOD_NOT_ALLOWED');
   const publicMainnet=checkedUrl(endpoint)===PUBLIC_MAINNET;
@@ -99,6 +117,17 @@ export async function rpc<T>(endpoint: string,method: string,params: unknown[]):
     await response.body?.cancel();await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
   }
   return rpcResult<T>(response!,method,publicMainnet?'publicnode':checkedUrl(endpoint)===OFFICIAL_MAINNET?'solana-official':'solana-custom');
+}
+/** Share identical in-flight public reads only. No completed values or receipts are cached. */
+export async function rpc<T>(endpoint:string,method:string,params:unknown[]):Promise<T> {
+  if(checkedUrl(endpoint)!==PUBLIC_MAINNET)return performRpc<T>(endpoint,method,params);
+  const key=JSON.stringify([method,params]);
+  let pending=publicInFlight.get(key);
+  if(!pending){
+    pending=performRpc<unknown>(endpoint,method,params).finally(()=>{publicInFlight.delete(key);});
+    publicInFlight.set(key,pending);
+  }
+  return structuredClone(await pending) as T;
 }
 export function accountInfo(raw: RpcAccount | null): AccountInfo<Buffer> | null {
   if (!raw) return null;

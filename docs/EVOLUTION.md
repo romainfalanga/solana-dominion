@@ -13,9 +13,9 @@
 
 ## Architecture retenue et vérifiée
 
-Le mécanisme SPL précédent attribuait 100 % au créateur contre un paiement fixe : il ne répond pas à R6 et doit être remplacé par une courbe utilisant le token de plateforme comme quote. Solution retenue : réutiliser un protocole déjà déployé (Meteora DBC) compatible avec le mint Token-2022 fourni, sans déploiement d’un programme propriétaire. La création des comptes et les transactions exigent néanmoins du SOL du signataire. Aucune transaction réelle n’est envoyée par les tests.
+Le mécanisme SPL précédent attribuait 100 % au créateur contre un paiement fixe : il a été remplacé par une courbe utilisant le token de plateforme comme quote. Solution retenue : réutiliser un protocole déjà déployé (Meteora DBC) compatible avec le mint Token-2022 fourni, sans déploiement d’un programme propriétaire. La création des comptes et les transactions exigent néanmoins du SOL du signataire. Aucune transaction réelle n’est envoyée par les tests.
 
-La relation à la crypto de plateforme est une cotation de marché, pas une parité garantie ni une promesse de prix. La part du créateur doit venir d’un achat réel sur la courbe, et le reste de la supply rester dans le protocole. Ne pas simuler ce comportement avec un transfert de frais à la trésorerie.
+La relation à la crypto de plateforme est une cotation de marché, pas une parité garantie ni une promesse de prix. La part du créateur vient d’un achat réel sur la courbe, et le reste de la supply demeure dans le protocole.
 
 ## Vérifications complémentaires
 
