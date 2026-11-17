@@ -17,3 +17,12 @@ Le navigateur est testé avec l’API de lecture simulée : état vide sans faus
 ## Limites
 
 Pas de cotation/liquidité automatique. Les tokens non cotés ont zéro surface. Nom/symbole existent dans le mémo/registre, pas dans un compte Metaplex. Les données prix sont celles d’un service externe et peuvent être manipulées sur les marchés peu liquides. Les quotas Cloudflare/RPC s’appliquent. Aucun audit externe n’est revendiqué.
+
+## Contrôles du 17 novembre 2026
+
+- 35 tests automatisés réussis, compilation TypeScript et build de production réussis.
+- 11 contrôles de transaction exécutés sur le validateur local avec le même builder que Phantom ; paquet maximal testé : 1014 octets.
+- Tests navigateur de production : état vide, modal de création, blocage sans Phantom, valorisation USD et affichage mobile.
+- Site public contrôlé dans Chromium sans API simulée : configuration mainnet CHOULE, création activée, registre vide, modal de paiement, RPC accessible depuis le navigateur (HTTP 200), aucune erreur JavaScript.
+- Les tests mainnet restent des simulations sans signature du propriétaire ni envoi. La première création réelle via Phantom reste à effectuer par un utilisateur.
+- RPC public gratuit : des limitations temporaires peuvent rendre les lectures indisponibles. Le serveur retente les réponses HTTP temporaires ; le navigateur actualise automatiquement les données. Aucun faux territoire n’est injecté.
