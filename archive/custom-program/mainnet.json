@@ -1,0 +1,11 @@
+{
+  "cluster": "mainnet-beta",
+  "quoteMint": "31CZR8AgCjGsbkjJGUznY99hiKTQkX6J2zxiwN9Mpump",
+  "quoteSymbol": "CHOULE",
+  "quoteDecimals": 6,
+  "quoteTokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "deploymentWallet": "sr1GJKY7LWggyQebWWE4BhoyMkC9Wwd3BCRcxchcY8d",
+  "programId": null,
+  "tradingEnabled": false,
+  "securityReview": "internal-tests-only-not-externally-audited"
+}

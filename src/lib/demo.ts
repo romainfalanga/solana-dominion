@@ -1,5 +1,5 @@
 import type {PlatformConfig,Token,Snapshot} from '../types';
-export const demoConfig:PlatformConfig={mode:'demo',quoteMint:null,quoteSymbol:'DOM',quoteDecimals:6,programId:null,rpcUrl:'https://api.devnet.solana.com',tradingEnabled:false,worldName:'Le monde de démonstration'};
+export const demoConfig:PlatformConfig={mode:'demo',creationFeeAtomic:'1000000',treasury:'sr1GJKY7LWggyQebWWE4BhoyMkC9Wwd3BCRcxchcY8d',configVersion:'demo-v1',creationEnabled:true,quoteMint:null,quoteSymbol:'DOM',quoteDecimals:6,quoteTokenProgram:'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',programId:null,rpcUrl:'https://api.devnet.solana.com',tradingEnabled:false,worldName:'Le monde de démonstration'};
 export const palette=['#a99ef5','#55c9be','#eaa17b','#7aa9e9','#dfc164','#da88ab','#9bbd8c','#7bc3dc'];
 export function revalue(token:Token):Token {
  const x=Number(token.baseReserve)/10**token.decimals,y=Number(token.quoteReserve)/10**token.quoteDecimals;

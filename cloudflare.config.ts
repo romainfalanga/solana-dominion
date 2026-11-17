@@ -4,7 +4,7 @@ export default defineConfig({
  worker:{
   name:'solana-dominion',previewUrls:false,entrypoint:'./server/index.ts',compatibilityDate:'2026-11-17',compatibilityFlags:['nodejs_compat'],
   assets:{notFoundHandling:'single-page-application',runWorkerFirst:['/api/*']},
-  env:{PLATFORM_MODE:bindings.text('demo'),QUOTE_SYMBOL:bindings.text('DOM'),TRADING_ENABLED:bindings.text('false')},
+  env:{CREATION_ENABLED:bindings.text('true'),DB:bindings.d1({id:'011a776a-18ac-4325-8783-cf473dfb09cd',name:'solana-dominion-registry'})},
   observability:{enabled:true,headSamplingRate:0.1,traces:{enabled:true,headSamplingRate:0.1}},
  }
 });

@@ -1,53 +1,27 @@
-# Mise en service
+# Configuration et utilisation
 
-## Ce que Romain doit faire maintenant
+## Remplacer le token de test
 
-La démonstration fonctionne sans token ni wallet. Le code est publié dans `romainfalanga/solana-dominion`, dépôt créé par le propriétaire. Aucun secret à envoyer dans la conversation.
+Ouvrir https://github.com/romainfalanga/solana-dominion/blob/main/config/platform.json ; modifier uniquement `paymentMint`, puis enregistrer sur `main`. Attendre le build Cloudflare réussi. Le site vérifie la nouvelle adresse et détecte symbole/décimales automatiquement. Un mint inexistant, gelable ou possédant une extension de transfert incompatible est refusé : aucune adresse invalide ne peut être rendue fonctionnelle par un simple remplacement.
 
-## GitHub et Cloudflare
+Les anciens tokens créés restent enregistrés. Les transactions correspondant à une ancienne configuration exposée peuvent être enregistrées après le changement d’adresse grâce à l’historique.
 
-Le dépôt contient `cloudflare.config.ts`, le lockfile et la CI. La connexion Workers Builds est configurée et vérifiée sur la branche `main` du dépôt GitHub. Le déclencheur est nommé « Dominion — main ».
+## Créer un token
 
-- Build : `npm test && npm run build` (Cloudflare installe déjà les dépendances avec le lockfile)
-- Deploy : `npm run deploy` (équivalent `cf deploy --prebuilt --mode production`)
-- Racine : `/`
-- Node : 24
+Ouvrir le site dans un navigateur avec Phantom, ou le navigateur intégré de Phantom mobile. Connecter le wallet, saisir nom et symbole, consulter le coût, puis signer. Le créateur reçoit1milliard de tokens, sans gel ni émission supplémentaire possible. Nom et symbole sont propres au registre Dominion et au mémo ; il n’y a pas de métadonnées Metaplex automatiquement publiées.
 
-Le déclencheur réutilise l’autorisation Workers Builds existante « potentielmemecoin build token », conservée dans Cloudflare ; aucun secret n’a été copié dans GitHub. L’API OAuth ne permet pas de créer ou inspecter les tokens personnels. Préférer un token dédié à Dominion lors de la prochaine configuration des droits ; ne pas révoquer le token partagé sans vérifier ses autres usages. Les modifications exclusivement documentaires sont exclues des déploiements pour éviter des compilations inutiles.
+La création demande le paiement applicatif affiché (par défaut1CHOULE) et les frais SOL du réseau et des comptes créés. Quand le créateur est aussi le destinataire configuré, le paiement CHOULE revient sur son propre compte. L’opérateur n’a aucun programme personnalisé à financer.
 
-## Première session Solana devnet
+Le mint de paiement de test fourni est `31CZR8AgCjGsbkjJGUznY99hiKTQkX6J2zxiwN9Mpump`, dont le symbole on-chain est CHOULE. Pas de phrase de récupération ni de clé privée à transmettre.
 
-1. Installer Phantom via https://phantom.app. Créer un wallet réservé aux tests ; conserver la phrase de récupération hors ligne et ne la communiquer à personne.
-2. Activer le réseau de test devnet dans Phantom. Fournir uniquement l’adresse publique pour préparer les tests. Le site vérifie le réseau de son RPC avant chaque transaction.
-3. Obtenir du SOL devnet au faucet officiel https://faucet.solana.com ; il n’a pas de valeur réelle. Le déploiement du programme consomme aussi du SOL devnet.
-4. Sur le poste sécurisé de déploiement, installer Rust, Agave et Anchor 0.31.1. Générer une nouvelle clé de programme ; remplacer le `declare_id!` et Anchor.toml par sa clé publique, reconstruire et refaire les tests. L’identifiant de développement inclus est uniquement chargé par le validator local ; ne pas essayer de déployer avec un keypair qui ne correspond pas.
-5. Déployer le binaire sur devnet. Conserver la clé d’upgrade sous contrôle du propriétaire ; ne pas utiliser une clé éphémère de conversation pour administrer le programme en production.
-6. Créer un mint SPL de test, 6 décimales, sans freeze authority et créditer le wallet de test. Les commandes SPL habituelles sont `spl-token --url devnet create-token --decimals 6`, `create-account <MINT>`, `mint <MINT> <MONTANT>`. Vérifier les résultats sur Explorer/devnet. L’autorité mint du token de test peut être conservée pour obtenir des jetons sans valeur.
-7. Renseigner les variables ci-dessous et redéployer. Tester création, achat, vente, refus de signature, montant insuffisant, expiration et changement de compte Phantom.
+## Carte et marchés
 
-## Variables publiques
+La création d’un token n’ajoute pas automatiquement de liquidité. Le token apparaît dans la liste ; un territoire lui est attribué quand un prix de marché externe est disponible. Le lien « Voir le marché externe » ouvre DexScreener et ne garantit pas une cotation existante.
 
-Dans `cloudflare.config.ts`, `worker.env`, utiliser `bindings.text(...)` :
+## Administration
 
-| Variable | Devnet | Sens |
-|---|---|---|
-| PLATFORM_MODE | devnet | Réseau ; demo par défaut |
-| QUOTE_MINT | mint du token de test | Adresse SPL classique ; décimales détectées |
-| QUOTE_SYMBOL | DOM | Libellé de la monnaie |
-| PROGRAM_ID | programme réellement déployé | Pas l’identifiant du test local |
-| PUBLIC_SOLANA_RPC_URL | https://api.devnet.solana.com | Endpoint utilisé dans le navigateur |
-| TRADING_ENABLED | true après vérification | Interrupteur UI |
+`CREATION_ENABLED` dans cloudflare.config.ts suspend les nouvelles créations côté interface/API. Aucun smart contract personnalisé à mettre à jour. Le registre D1 utilise la migration `migrations/0001_registry.sql`.
 
-`SOLANA_RPC_URL` peut être un **secret Worker** pour le fournisseur RPC serveur. Le RPC public Solana est adapté au développement mais peut limiter les requêtes. Définir un fournisseur et des limites avant fréquentation réelle.
+GitHub main déclenche Workers Builds : tests puis build, déploiement normal sans --force. Les modifications documentaires seules ne redéploient pas. Le token Workers Builds existant reste enregistré dans Cloudflare, aucun secret n’est copié dans GitHub.
 
-Changer de mint crée un nouveau monde. Archiver l’ancienne configuration et garder son interface accessible : les fonds d’anciens marchés ne sont pas migrés. Une interface de sélection des anciens mondes est à ajouter avant plusieurs mondes de production.
-
-## Avant mainnet
-
-Traiter la manipulation de capitalisation spot et la faible liquidité, audit du programme et du SDK, tests devnet avec vrais wallets, politique d’upgrade et de gestion d’incident, gestion de trafic/indexeur, conditions de lancement. Le verrou supplémentaire `MAINNET_ACK=AUDITED_AND_APPROVED` n’effectue aucun audit : il exige une activation volontaire après ces travaux. Ne pas l’activer simplement pour contourner un message d’erreur.
-
-Nom/symbole sont stockés dans le compte du programme ; aucune intégration Metaplex n’est incluse. Les wallets externes peuvent afficher seulement l’adresse du mint. Les tokens ne sont pas automatiquement cotés sur Raydium/Jupiter ; le marché de cette version est interne au programme Dominion.
-
-Si le RPC public change, adapter aussi `connect-src` dans `public/_headers` au domaine HTTPS/WSS exact, sans autoriser tous les domaines. Reconstruire et redéployer.
-
-`TRADING_ENABLED` est un verrou de l’interface, pas une pause du programme permissionless. Il n’empêche pas l’appel direct d’un programme déjà déployé. Ne pas déployer sur mainnet avant la validation correspondante.
+En cas de confirmation incertaine, actualiser et vérifier la signature dans Explorer ; ne pas recréer le token. L’inscription peut attendre la finalisation Solana (plusieurs secondes). Un reçu local permet la reprise sans nouveau paiement.

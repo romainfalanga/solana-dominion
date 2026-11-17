@@ -1,6 +1,9 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{associated_token::AssociatedToken, token::{self, Mint, Token, TokenAccount, MintTo, SetAuthority, TransferChecked, spl_token::instruction::AuthorityType}};
 
+use anchor_spl::token_interface::{self, Mint as InterfaceMint, TokenAccount as InterfaceTokenAccount, TokenInterface};
+use anchor_spl::token_2022::spl_token_2022::{self, extension::{BaseStateWithExtensions, ExtensionType, StateWithExtensions}};
+
 declare_id!("Fg6PaFpoGXkYsidMpWxTWqkZ7FEfcYkgMQHHTPqzW8B");
 pub const INITIAL_SUPPLY: u64 = 1_000_000_000_000_000;
 pub const TOKEN_DECIMALS: u8 = 6;
@@ -9,7 +12,7 @@ pub const TOKEN_DECIMALS: u8 = 6;
 pub mod dominion {
     use super::*;
     pub fn initialize_config(ctx: Context<InitializeConfig>) -> Result<()> {
-        require!(ctx.accounts.quote_mint.freeze_authority.is_none(), LaunchError::FreezeAuthority);
+        validate_quote_mint(&ctx.accounts.quote_mint.to_account_info())?;
         ctx.accounts.config.quote_mint = ctx.accounts.quote_mint.key();
         ctx.accounts.config.bump = ctx.bumps.config;
         Ok(())
@@ -18,7 +21,7 @@ pub mod dominion {
         require!(!name.trim().is_empty() && name.len() <= 32, LaunchError::InvalidMetadata);
         require!(!symbol.is_empty() && symbol.len() <= 10 && symbol.bytes().all(|b| b.is_ascii_alphanumeric()), LaunchError::InvalidMetadata);
         require!(seed_quote > 0, LaunchError::ZeroAmount);
-        require!(ctx.accounts.quote_mint.freeze_authority.is_none(), LaunchError::FreezeAuthority);
+        validate_quote_mint(&ctx.accounts.quote_mint.to_account_info())?;
         let mint_key = ctx.accounts.mint.key();
         let bump = [ctx.bumps.pool];
         let seeds: &[&[u8]] = &[b"pool", mint_key.as_ref(), &bump];
@@ -28,7 +31,7 @@ pub mod dominion {
         token::set_authority(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), SetAuthority {
             current_authority: ctx.accounts.pool.to_account_info(), account_or_mint: ctx.accounts.mint.to_account_info()
         }, &[seeds]), AuthorityType::MintTokens, None)?;
-        token::transfer_checked(CpiContext::new(ctx.accounts.token_program.to_account_info(), TransferChecked {
+        token_interface::transfer_checked(CpiContext::new(ctx.accounts.quote_token_program.to_account_info(), token_interface::TransferChecked {
             from: ctx.accounts.creator_quote.to_account_info(), mint: ctx.accounts.quote_mint.to_account_info(), to: ctx.accounts.quote_vault.to_account_info(), authority: ctx.accounts.creator.to_account_info()
         }), seed_quote, ctx.accounts.quote_mint.decimals)?;
         let pool = &mut ctx.accounts.pool;
@@ -47,9 +50,10 @@ pub mod dominion {
     }
     pub fn buy(ctx: Context<Swap>, amount_in: u64, min_out: u64, deadline: i64) -> Result<()> {
         check_deadline(deadline)?;
+        validate_quote_mint(&ctx.accounts.quote_mint.to_account_info())?;
         let out = output_amount(ctx.accounts.quote_vault.amount, ctx.accounts.token_vault.amount, amount_in)?;
         require!(out >= min_out && min_out > 0, LaunchError::Slippage);
-        token::transfer_checked(CpiContext::new(ctx.accounts.token_program.to_account_info(), TransferChecked {
+        token_interface::transfer_checked(CpiContext::new(ctx.accounts.quote_token_program.to_account_info(), token_interface::TransferChecked {
             from: ctx.accounts.trader_quote.to_account_info(), mint: ctx.accounts.quote_mint.to_account_info(), to: ctx.accounts.quote_vault.to_account_info(), authority: ctx.accounts.trader.to_account_info()
         }), amount_in, ctx.accounts.quote_mint.decimals)?;
         let mint_key = ctx.accounts.mint.key();
@@ -63,6 +67,7 @@ pub mod dominion {
     }
     pub fn sell(ctx: Context<Swap>, amount_in: u64, min_out: u64, deadline: i64) -> Result<()> {
         check_deadline(deadline)?;
+        validate_quote_mint(&ctx.accounts.quote_mint.to_account_info())?;
         let out = output_amount(ctx.accounts.token_vault.amount, ctx.accounts.quote_vault.amount, amount_in)?;
         require!(out >= min_out && min_out > 0, LaunchError::Slippage);
         token::transfer_checked(CpiContext::new(ctx.accounts.token_program.to_account_info(), TransferChecked {
@@ -71,12 +76,26 @@ pub mod dominion {
         let mint_key = ctx.accounts.mint.key();
         let bump = [ctx.accounts.pool.bump];
         let seeds: &[&[u8]] = &[b"pool", mint_key.as_ref(), &bump];
-        token::transfer_checked(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), TransferChecked {
+        token_interface::transfer_checked(CpiContext::new_with_signer(ctx.accounts.quote_token_program.to_account_info(), token_interface::TransferChecked {
             from: ctx.accounts.quote_vault.to_account_info(), mint: ctx.accounts.quote_mint.to_account_info(), to: ctx.accounts.trader_quote.to_account_info(), authority: ctx.accounts.pool.to_account_info()
         }, &[seeds]), out, ctx.accounts.quote_mint.decimals)?;
         emit!(Trade { pool: ctx.accounts.pool.key(), trader: ctx.accounts.trader.key(), buy: false, amount_in, amount_out: out });
         Ok(())
     }
+}
+
+/// Only mint extensions that cannot change transfer semantics are supported.
+/// Revalidate at every state transition, including swaps, rather than trusting initial registration.
+fn validate_quote_mint(info: &AccountInfo) -> Result<()> {
+    require!(*info.owner == token::ID || *info.owner == spl_token_2022::ID, LaunchError::InvalidQuoteProgram);
+    let data = info.try_borrow_data()?;
+    let mint = StateWithExtensions::<spl_token_2022::state::Mint>::unpack(&data)?;
+    require!(mint.base.freeze_authority.is_none(), LaunchError::FreezeAuthority);
+    require!(mint.base.decimals <= 18, LaunchError::InvalidMint);
+    for extension in mint.get_extension_types()? {
+        require!(matches!(extension, ExtensionType::MetadataPointer | ExtensionType::TokenMetadata), LaunchError::UnsupportedQuoteExtension);
+    }
+    Ok(())
 }
 
 fn check_deadline(deadline: i64) -> Result<()> {
@@ -98,7 +117,7 @@ pub fn output_amount(reserve_in: u64, reserve_out: u64, amount: u64) -> Result<u
 #[derive(Accounts)]
 pub struct InitializeConfig<'info> {
     #[account(mut)] pub payer: Signer<'info>,
-    pub quote_mint: Account<'info, Mint>,
+    pub quote_mint: InterfaceAccount<'info, InterfaceMint>,
     #[account(init, payer = payer, space = 8 + Config::INIT_SPACE, seeds = [b"config", quote_mint.key().as_ref()], bump)]
     pub config: Account<'info, Config>,
     pub system_program: Program<'info, System>,
@@ -108,18 +127,20 @@ pub struct CreatePool<'info> {
     #[account(mut)] pub creator: Signer<'info>,
     #[account(seeds = [b"config", quote_mint.key().as_ref()], bump = config.bump, has_one = quote_mint)]
     pub config: Account<'info, Config>,
-    pub quote_mint: Account<'info, Mint>,
+    pub quote_mint: InterfaceAccount<'info, InterfaceMint>,
     #[account(init, payer = creator, mint::decimals = TOKEN_DECIMALS, mint::authority = pool)]
     pub mint: Account<'info, Mint>,
     #[account(init, payer = creator, space = 8 + Pool::INIT_SPACE, seeds = [b"pool", mint.key().as_ref()], bump)]
     pub pool: Account<'info, Pool>,
     #[account(init, payer = creator, associated_token::mint = mint, associated_token::authority = pool)]
     pub token_vault: Account<'info, TokenAccount>,
-    #[account(init, payer = creator, associated_token::mint = quote_mint, associated_token::authority = pool)]
-    pub quote_vault: Account<'info, TokenAccount>,
-    #[account(mut, associated_token::mint = quote_mint, associated_token::authority = creator)]
-    pub creator_quote: Account<'info, TokenAccount>,
+    #[account(init, payer = creator, associated_token::mint = quote_mint, associated_token::authority = pool, associated_token::token_program = quote_token_program)]
+    pub quote_vault: InterfaceAccount<'info, InterfaceTokenAccount>,
+    #[account(mut, associated_token::mint = quote_mint, associated_token::authority = creator, associated_token::token_program = quote_token_program)]
+    pub creator_quote: InterfaceAccount<'info, InterfaceTokenAccount>,
     pub token_program: Program<'info, Token>,
+    #[account(constraint = *quote_mint.to_account_info().owner == quote_token_program.key() @ LaunchError::InvalidQuoteProgram)]
+    pub quote_token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
@@ -130,16 +151,18 @@ pub struct Swap<'info> {
     pub pool: Account<'info, Pool>,
     #[account(constraint = mint.decimals == TOKEN_DECIMALS @ LaunchError::InvalidMint)]
     pub mint: Account<'info, Mint>,
-    pub quote_mint: Account<'info, Mint>,
+    pub quote_mint: InterfaceAccount<'info, InterfaceMint>,
     #[account(mut, associated_token::mint = mint, associated_token::authority = pool)]
     pub token_vault: Account<'info, TokenAccount>,
-    #[account(mut, associated_token::mint = quote_mint, associated_token::authority = pool)]
-    pub quote_vault: Account<'info, TokenAccount>,
+    #[account(mut, associated_token::mint = quote_mint, associated_token::authority = pool, associated_token::token_program = quote_token_program)]
+    pub quote_vault: InterfaceAccount<'info, InterfaceTokenAccount>,
     #[account(init_if_needed, payer = trader, associated_token::mint = mint, associated_token::authority = trader)]
     pub trader_token: Account<'info, TokenAccount>,
-    #[account(init_if_needed, payer = trader, associated_token::mint = quote_mint, associated_token::authority = trader)]
-    pub trader_quote: Account<'info, TokenAccount>,
+    #[account(init_if_needed, payer = trader, associated_token::mint = quote_mint, associated_token::authority = trader, associated_token::token_program = quote_token_program)]
+    pub trader_quote: InterfaceAccount<'info, InterfaceTokenAccount>,
     pub token_program: Program<'info, Token>,
+    #[account(constraint = *quote_mint.to_account_info().owner == quote_token_program.key() @ LaunchError::InvalidQuoteProgram)]
+    pub quote_token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
@@ -169,6 +192,8 @@ pub enum LaunchError {
     #[msg("Dépassement numérique.")] Overflow,
     #[msg("Montant trop faible ou réserve insuffisante.")] Dust,
     #[msg("Mint incompatible.")] InvalidMint,
+    #[msg("Programme du token de paiement incompatible.")] InvalidQuoteProgram,
+    #[msg("Extension du token de paiement non autorisée.")] UnsupportedQuoteExtension,
 }
 
 #[cfg(test)]

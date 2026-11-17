@@ -1,12 +1,28 @@
-# Solana Dominion
+# Dominion
 
-Launchpad Solana et jeu de territoires. La carte partage exactement son rectangle entre les capitalisations en circulation des tokens du même monde.
+Launchpad Solana utilisant les programmes SPL existants, sans déploiement de smart contract personnalisé.
 
-**État : application de démonstration + programme Solana compilable et testé localement. Pas de lancement mainnet.** Les signatures Phantom exigent un programme réellement déployé, un mint de paiement configuré et des fonds devnet. Le mode demo ne crée aucun actif réel.
+**Site : https://solana-dominion.romainfalanga83.workers.dev**
 
-## Démarrer
+## Remplacer le token de paiement
 
-Node.js 24 recommandé, minimum 22.18 pour Cloudflare CLI.
+Dans [`config/platform.json`](config/platform.json), modifier uniquement `paymentMint`, puis enregistrer sur `main`. GitHub déclenche les tests et Cloudflare déploie. Symbole, décimales et programme SPL sont détectés depuis Solana. Les anciennes créations restent dans le registre.
+
+Le token de test est l’adresse fournie par le propriétaire, `31CZR8AgCjGsbkjJGUznY99hiKTQkX6J2zxiwN9Mpump` (CHOULE sur chaîne). Le tarif de création est `creationFeeTokens` (1 token par défaut), reçu par `treasury`. Ces deux paramètres sont également configurables.
+
+## Création réelle
+
+Phantom signe une transaction atomique qui crée un mint SPL classique, attribue un milliard de tokens au créateur, révoque l’émission, transfère le paiement configuré et inscrit un mémo signé. En cas d’échec, aucune création ni aucun paiement applicatif n’est conservé ; les frais réseau d’une transaction échouée peuvent néanmoins être facturés par Solana.
+
+Le créateur paie ses frais réseau et comptes Solana. L’opérateur n’a pas à financer le déploiement d’un programme. Aucun fonds n’est détenu par le serveur et aucune clé privée n’y est requise.
+
+Le serveur vérifie la transaction finalisée avant inscription D1. Nom et symbole sont enregistrés dans le mémo et le registre Dominion ; le token n’a pas de compte de métadonnées Metaplex, donc les wallets externes peuvent afficher son adresse plutôt que son nom.
+
+## Territoires et prix
+
+Prix USD de la paire Solana la plus liquide disponible sur DexScreener × supply actuelle vérifiée sur Solana. Aucun prix inventé, aucune réserve interne. Sans marché coté, capitalisation zéro et présence dans la liste d’attente. Les échanges/liquidités se font sur les marchés externes ; créer un token ici ne lui crée pas automatiquement un marché ou une liquidité. La recherche ne change pas le dénominateur global de la carte.
+
+## Développement
 
 ```sh
 npm ci
@@ -16,29 +32,8 @@ npm run build
 npm run preview
 ```
 
-`npm run dev` ouvre une simulation locale. Pour tester le mode chaîne côté navigateur : configurer Cloudflare puis `npm run build && npm run preview` (le build utilise l’API réelle). Les actifs de production et le bundle Worker sont dans `.cloudflare/output/v1/`.
+`dev` montre une simulation locale explicite ; le site de production utilise l’API mainnet et le registre D1. Pour tester la transaction sans dépenser de SOL réel : démarrer un validateur local standard puis `LOCAL_RPC_URL=http://127.0.0.1:8899 npm run test:standard`.
 
-## Documentation
+La CI teste le code et le navigateur avec des réponses de lecture simulées. Les scénarios du SDK de création sont également exécutés sur un validateur local. Aucune transaction mainnet n’est envoyée automatiquement par les tests.
 
-- [Plan, choix et limites économiques](docs/PLAN.md)
-- [Mise en service et configuration](docs/MISE-EN-SERVICE.md)
-- [Programme Solana et ABI](programs/dominion/README.md)
-- [API et cohérence des snapshots](server/README.md)
-- [État de validation](docs/VALIDATION.md)
-
-## Organisation
-
-`src/` interface, wallet, maths et carte ; `server/` API Cloudflare ; `programs/dominion/` programme Anchor ; `scripts/test-localnet.mjs` transactions adversariales sur validator ; `tests/` tests TypeScript.
-
-Le token de paiement est public et configurable dans `cloudflare.config.ts`. Ne jamais y ajouter une phrase de récupération, clé de wallet ou URL RPC privée avec identifiant. Utiliser un secret Cloudflare pour `SOLANA_RPC_URL`.
-
-## Vérifier Solana
-
-```sh
-cargo test --workspace --locked
-cargo build-sbf --arch v0 --manifest-path programs/dominion/Cargo.toml
-# Voir scripts/test-localnet.mjs pour démarrer le validator avec le programme.
-npm run test:localnet
-```
-
-La réserve de lancement reste dans le marché. La capitalisation au prix marginal est manipulable en faible liquidité : cette version n’est pas une compétition financière mainnet prête à ouvrir. Voir le plan pour les exigences de durcissement.
+Voir [mise en service](docs/MISE-EN-SERVICE.md), [validation](docs/VALIDATION.md) et [sécurité](SECURITY.md).

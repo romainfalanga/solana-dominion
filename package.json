@@ -10,12 +10,13 @@
     "check": "tsc -b",
     "preview": "vite preview --host 0.0.0.0",
     "deploy": "cf deploy --prebuilt --mode production",
-    "test:localnet": "node scripts/test-localnet.mjs",
-    "test:ui": "node scripts/test-ui.mjs"
+    "test:ui": "node scripts/test-ui.mjs",
+    "test:standard": "node scripts/test-standard-launch.mjs"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
+    "bs58": "^6.0.0",
     "buffer": "^6.0.3",
     "d3-hierarchy": "^3.1.2",
     "lucide-react": "^0.468.0",

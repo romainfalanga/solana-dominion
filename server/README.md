@@ -1,30 +1,52 @@
-# API Cloudflare
+# Registre de créations SPL et territoires
 
-API en lecture seule, sans base de données, sans clés de signature et sans relais arbitraire de transactions.
+Cette version ne déploie aucun programme Solana propriétaire. Le navigateur construit une transaction signée dans Phantom utilisant uniquement les programmes System, SPL Token, Associated Token Account, SPL Token-2022 pour le paiement si nécessaire, et Memo. Le serveur ne possède aucune clé de signature et n’envoie aucune transaction.
 
-- `GET /api/config` : configuration publique, décimales réelles du token de paiement, activation explicite des échanges. En mode réel, vérifie le genesis hash du réseau, le programme exécutable et le mint SPL classique sans autorité de gel. Le RPC privé ne figure jamais dans la réponse.
-- `GET /api/territories` : comptes Pool appartenant au programme, filtrés par discriminateur et monnaie de paiement. Vérification du PDA et des deux ATA ; lecture conjointe de chaque mint et des deux réserves ; autorité de mint et de gel absentes ; offre courante lue dans le mint pour tenir compte des burns. Prix = réserve quote / réserve base, après normalisation des décimales. Capitalisation circulante = prix × (offre courante − réserve base).
-- `GET /api/health` : santé HTTP uniquement ; ne certifie pas la disponibilité de Solana.
+## Configuration unique
 
-Les réponses réelles de config et territoires sont mises en cache 10 secondes dans le Cache API Cloudflare. Cette API est locale à chaque datacenter, pas un verrou distribué global. Les paramètres de requête ne changent pas le monde et ne fragmentent pas le cache. Les navigateurs reçoivent `no-store` pour éviter une configuration périmée après changement de monde.
+`config/platform.json` définit `paymentMint`, `treasury`, `creationFeeTokens` et `cluster`. Les décimales et le programme du mint de paiement sont lus réellement sur Solana ; le montant atomique est dérivé du montant humain. Le symbole provient des métadonnées JSON parsed du mint. Sans symbole vérifiable, l’interface reçoit une adresse abrégée, jamais un nom inventé.
 
-Le RPC utilise `confirmed`. Le programme, les mints et les réserves sont la source de vérité, jamais une valorisation envoyée par un navigateur. Chaque groupe contient au plus 33 marchés (99 comptes). Les trois comptes d'un marché partagent le même snapshot bancaire ; plusieurs groupes peuvent correspondre à des slots différents. `minContextSlot` empêche une lecture antérieure au groupe précédent ; `snapshot.slot` expose le plus ancien slot des réserves retournées. Cela ne fournit pas un snapshot historique global atomique. Pour l'obtenir à grande échelle, prévoir un indexeur qui reconstruit l'état à une frontière de slot finalisée.
+Le serveur accepte les mints SPL classiques et les mints Token-2022 limités aux extensions MetadataPointer et TokenMetadata, sans autorité de gel. La validation est partagée avec le navigateur dans `src/lib/quoteMint.ts`.
 
-Le premier déploiement limite un monde à 250 marchés. Au-delà, l'API refuse le résultat au lieu de tronquer le dénominateur et de produire de mauvaises proportions. Les réponses RPC sont bornées à 2 Mo et chaque requête à 8 secondes. Avant une ouverture publique importante : indexeur, limitation de débit au niveau Cloudflare, RPC dimensionné, surveillance. La valorisation au prix spot n'est pas une estimation de la somme réalisable en vendant toute l'offre ; les achats, ventes et donations aux réserves peuvent modifier le prix.
+Une version est calculée à partir du SHA-256 du JSON ordonné `{cluster,paymentMint,treasury,creationFeeAtomic,quoteTokenProgram}`, tronqué à 16 caractères hexadécimaux. Avant d’exposer cette version, l’API la conserve dans `configurations`. Les reçus de transactions utilisant une ancienne configuration publiée restent enregistrables après un changement de token de paiement. Une collision de version avec des valeurs différentes provoque une erreur.
 
-Variables :
+Variables Cloudflare : `CREATION_ENABLED=true` active le parcours, `SOLANA_RPC_URL` contient éventuellement un RPC serveur privé, `PUBLIC_SOLANA_RPC_URL` un RPC explicitement public pour le navigateur. Le binding D1 `DB` est requis. Aucune URL RPC privée ne figure dans les réponses ni les messages d’erreur. `ASSETS` sert l’interface. Utiliser `nodejs_compat` pour les dépendances Solana.
 
-| Variable | Rôle |
-| --- | --- |
-| `PLATFORM_MODE` | `demo` (défaut), `devnet`, `mainnet-beta` |
-| `QUOTE_MINT` | Mint SPL du monde ; aucune adresse par défaut en mode réel |
-| `QUOTE_SYMBOL` | Symbole d'affichage, `DOM` par défaut |
-| `PROGRAM_ID` | Adresse du programme déjà déployé sur le réseau choisi |
-| `SOLANA_RPC_URL` | RPC serveur HTTPS ; configurer comme secret s'il contient une clé |
-| `PUBLIC_SOLANA_RPC_URL` | RPC navigateur HTTPS explicitement public ; défaut RPC officiel du réseau |
-| `TRADING_ENABLED` | `true` pour proposer des transactions, sinon lecture seule |
-| `MAINNET_ACK` | `AUDITED_AND_APPROVED` en plus de `TRADING_ENABLED=true` pour mainnet ; ce marqueur ne remplace pas un audit |
+## Routes
 
-Bindings : `ASSETS` facultatif pour servir les fichiers de l'interface. Compatibilité Worker : `nodejs_compat` pour les dépendances Solana. Les logs d'erreur n'incluent pas les messages bruts du fournisseur RPC, car ils peuvent contenir son URL privée.
+- `GET /api/state` retourne `{config,snapshot}` ensemble ; aucune démonstration automatique en cas d’échec. `programId` vaut null, les échanges intégrés sont désactivés et `creationEnabled` reflète l’activation explicite.
+- `GET /api/config` et `GET /api/territories` restent disponibles séparément.
+- `POST /api/launches` accepte uniquement `{"signature":"…"}`. Corps JSON borné à 5 Kio et refus des origines de navigateur différentes. Aucune métadonnée envoyée directement par le client n’est enregistrée.
+- `GET /api/health` vérifie le service HTTP, pas la disponibilité de Solana ou D1.
 
-Tests : `npx vitest run tests/server.test.ts`. Ce sont des tests Node avec RPC simulé ; la validation du runtime Cloudflare et les tests devnet doivent également être exécutés avant ouverture réelle.
+Les lectures sont mises en cache 15 secondes dans le cache local au datacenter Cloudflare. La clé contient la configuration et son activation. Après enregistrement, le cache des territoires est invalidé dans le datacenter courant. Les réponses navigateur portent `no-store`. Aucun proxy RPC arbitraire n’est exposé.
+
+## Vérification des créations
+
+L’API relit la transaction `jsonParsed` avec le commitment **finalized**. Si elle n’est pas encore disponible, elle répond HTTP 409 `TRANSACTION_PENDING` avec `Retry-After: 4`. Le client doit réessayer la même signature, sans payer une nouvelle création.
+
+La vérification impose :
+
+1. Transaction réussie, signature retournée correspondante, créateur payeur et signataire, nouveau mint également signataire.
+2. Création System d’un nouveau compte de mint de 82 octets appartenant au programme SPL classique, dans cette même transaction.
+3. `initializeMint2` avec 6 décimales, autorité initiale du créateur et aucune autorité de gel.
+4. `mintTo` de 1 000 000 000 tokens vers l’ATA du créateur, puis révocation de l’autorité de mint. Le solde initial final de cette transaction confirme cette attribution.
+5. `transferChecked` du montant exact de frais dans la monnaie et vers l’ATA de trésorerie de la configuration publiée. Le delta des soldes de la trésorerie doit confirmer la réception, ce qui rejette un remboursement dissimulé dans la même transaction. Un créateur qui est lui-même la trésorerie réalise un auto-transfert.
+6. Un seul reçu Memo signé par la transaction, avec application, version, configuration, mint, nom et symbole conformes.
+7. État actuel du mint : classique, initialisé, 6 décimales, autorités de mint et de gel absentes, offre au plus égale à l’offre initiale. Des burns postérieurs ne bloquent pas un enregistrement retardé ; l’état initial reste prouvé par la transaction finalisée.
+
+D1 impose l’unicité du mint et de la signature par réseau. La même signature est idempotente, y compris après rotation du token de paiement. Une désactivation administrative de la création suspend les nouveaux enregistrements ; les reçus peuvent être réessayés après réactivation.
+
+## Valorisation des territoires
+
+Le registre conserve toutes les générations de token de paiement, dans le réseau courant. L’offre actuelle de chaque token créé est relue dans son mint Solana finalisé ; les burns réduisent donc sa valorisation.
+
+Les cotations viennent de l’API publique [DexScreener](https://docs.dexscreener.com/api/reference), endpoint `/tokens/v1/solana/{tokenAddresses}`, par groupes de 30 adresses. Le serveur choisit, pour chaque mint, la paire où il est **baseToken**, avec le plus de liquidité USD déclarée. Le prix est en USD. Les champs externes `marketCap` et `fdv` ne sont pas utilisés.
+
+**Valorisation affichée = prix USD × offre actuelle non brûlée.** Ce n’est pas une expertise indépendante de l’offre circulante ni une promesse de montant réalisable à la vente. Les tokens verrouillés ou détenus par le créateur ne sont pas déduits. Une cotation absente ou sans liquidité positive donne un prix et une surface nuls ; le token reste dans la liste. Une panne du fournisseur produit une erreur explicite, pas un prix inventé ni un retour à la démonstration. Cette version ne crée pas automatiquement un pool de liquidité.
+
+Limites : 1 000 tokens par réseau avant refus explicite, jamais de troncature silencieuse du dénominateur. Les offres sont lues par groupes de 100 comptes ; chaque groupe a son propre slot avec `minContextSlot` monotone, pas un snapshot global historique atomique. Les cotations externes ont leur propre temporalité. Les petits pools et le prix spot restent manipulables. Avant forte fréquentation, prévoir un indexeur et un cache coordonné, une limitation de débit et la surveillance des RPC/DexScreener.
+
+## Validation
+
+`tests/fixtures/standard-launch.json` provient d’une véritable transaction SDK réussie sur validateur local, finalisée, sans secret. Les tests HTTP utilisent cette structure réelle puis altèrent les preuves pour vérifier les rejets : frais erronés ou remboursés, absence de création du mint, autorités, offre, configuration inconnue, mauvaise origine, attente de finalisation, idempotence et rotation de paiement. Les tests emploient un faux D1 et un faux transport RPC ; ils ne constituent pas un audit externe ni une transaction mainnet de validation.

@@ -1,6 +1,6 @@
 # Sécurité et limites
 
-Cette livraison est une démonstration et une base devnet. Le programme n’a pas reçu d’audit externe. Les tests locaux réussis ne prouvent ni l’absence de failles ni la résistance économique d’une compétition réelle.
+Cette livraison utilise les programmes SPL existants sur mainnet, sans smart contract personnalisé. Aucun audit externe de l’application n’est revendiqué. Les tests locaux et simulations ne prouvent pas l’absence de failles.
 
 ## Revue des dépendances — 17 novembre 2026
 
@@ -12,16 +12,14 @@ Cette livraison est une démonstration et une base devnet. Le programme n’a pa
 
 Preuves : bundles issus de `.cloudflare/output/v1/`, sources installées de bigint-buffer, web3 et jayson. Cette analyse de portée n’est pas un correctif des dépendances. Avant mainnet, migrer vers une chaîne SDK maintenue sans ces alertes puis refaire les tests complets des transactions et du runtime. Ne pas appliquer automatiquement le downgrade SPL proposé par npm audit.
 
-## Limites fonctionnelles et économiques
+## Modèle actuel
 
-Le prix spot d’un pool très peu liquide permet une capitalisation apparente très élevée ; voir docs/PLAN.md. Aucune résistance au wash trading, aucun oracle/TWAP ni classement anti-manipulation ne sont revendiqués. Les réserves initiales ne sont pas récupérables par une fonction de retrait LP. La supply hors vault est une approximation de la circulation.
+Le créateur signe une transaction standard atomique. Aucun serveur ne détient sa clé privée. La base D1 accepte uniquement les créations dont la transaction finalisée est vérifiée, incluant le paiement, le mint, les autorités et le mémo. Les inscriptions sont idempotentes ; un changement de token de paiement conserve l’historique des configurations.
 
-## Clés et transactions
+La carte n’invente pas de prix : sans cotation externe le territoire est nul. Le prix d’un marché peu liquide peut être manipulé. Aucun programme de trading ni réserve interne ne sont déployés.
 
-Aucun secret utilisateur n’est stocké par le serveur. Les signatures passent par Phantom. Les clés éphémères de mint servent uniquement à créer un compte et ne possèdent plus l’autorité mint après la création. Les clés de programme/upgrade ne doivent jamais être committées. Le verrou UI TRADING_ENABLED n’est pas une pause on-chain.
+## Confirmation et frais
 
-En cas de confirmation incertaine, vérifier la signature retournée sur Explorer avant toute nouvelle tentative. Ne jamais demander à un utilisateur sa phrase de récupération.
+Une signature est conservée avant diffusion. Si la confirmation est incertaine, actualiser et consulter Explorer plutôt que recréer le token. En cas d’échec on-chain, la création et le paiement applicatif sont annulés ensemble, mais Solana peut conserver les frais réseau. Les clés de mint temporaires ne sont pas des autorités après révocation.
 
-## Mise à jour de l’outillage
-
-Vitest a été migré vers 5.1.0 après détection des alertes critiques tinypool et de l’ancienne chaîne mocker. Les 22 tests et le build passent. L’audit complet après migration signale désormais 0 critical, 3 high et 6 moderate, correspondant aux dépendances Solana déjà analysées ci-dessus.
+Vitest 5.1.0 remplace l’ancienne version de tests affectée par les alertes tinypool ; les risques transitifs SDK détaillés plus haut restent documentés.

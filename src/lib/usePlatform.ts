@@ -1,44 +1,49 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import type {PlatformConfig,Snapshot,CreateTokenInput,TradeInput} from '../types';
 import {demoConfig,initialDemo,palette,revalue} from './demo';
-import {parseUnits,calculateOutput,minimumOutput} from './math';
-import {phantom,createOnChain,tradeOnChain} from './wallet';
-const STORE='dominion-demo-v1';
-function readDemo():Snapshot {try {const raw=localStorage.getItem(STORE);if(raw){const data=JSON.parse(raw);if(data.source==='demo'&&Array.isArray(data.tokens)&&data.tokens.length<=100&&data.tokens.every((t:Record<string,unknown>)=>typeof t.mint==='string'&&String(t.mint).startsWith('demo-')&&typeof t.baseReserve==='string'&&/^\d+$/.test(t.baseReserve)&&typeof t.quoteReserve==='string'&&/^\d+$/.test(t.quoteReserve)&&t.supply==='1000000000000000')) return {...data,tokens:data.tokens.map(revalue)};}}catch{/* Invalid local data resets only simulation. */}return initialDemo();}
-async function request<T>(url:string):Promise<T>{const res=await fetch(url,{signal:AbortSignal.timeout(15000)});if(!res.ok){let msg='Service indisponible.';try{const data=await res.json();msg=data.error??msg;}catch{}throw new Error(msg);}return res.json();}
+import {phantom,createOnChain} from './wallet';
+import {PendingTransactionError} from './transactions';
+const RECEIPTS='dominion-pending-registrations-v1';
+const STORE='dominion-demo-v2';
+function pending():string[]{try{const data=JSON.parse(localStorage.getItem(RECEIPTS)||'[]');return Array.isArray(data)?data.filter(s=>typeof s==='string').slice(-30):[];}catch{return [];}}
+function remember(signature:string){localStorage.setItem(RECEIPTS,JSON.stringify([...new Set([...pending(),signature])].slice(-30)));}
+async function register(signature:string):Promise<boolean>{const res=await fetch('/api/launches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature}),signal:AbortSignal.timeout(20000)});if(res.status===409)return false;if(!res.ok){const data=await res.json().catch(()=>({error:'Enregistrement indisponible.'}));throw new Error(typeof data.error==='string'?data.error:'Enregistrement indisponible.');}localStorage.setItem(RECEIPTS,JSON.stringify(pending().filter(s=>s!==signature)));return true;}
+function readDemo():Snapshot{try{const data=JSON.parse(localStorage.getItem(STORE)||'null');if(data?.source==='demo'&&Array.isArray(data.tokens)&&data.tokens.length<=100)return data;}catch{}return initialDemo();}
+async function stateRequest(){const res=await fetch('/api/state',{signal:AbortSignal.timeout(20000)});if(!res.ok){const data=await res.json().catch(()=>({}));throw new Error(data.error||'Impossible de vérifier les données Solana.');}return res.json() as Promise<{config:PlatformConfig;snapshot:Snapshot}>;}
 export function usePlatform(){
- const [config,setConfig]=useState<PlatformConfig>(demoConfig),[snapshot,setSnapshot]=useState<Snapshot>(initialDemo),[loading,setLoading]=useState(true),[error,setError]=useState<string|null>(null),[wallet,setWallet]=useState<string|null>(null),[busy,setBusy]=useState(false),[notice,setNotice]=useState<string|null>(null);
- const ready=useRef(false),lock=useRef(false),configRef=useRef(config),holdings=useRef<Record<string,bigint>>({});
- const updateDemo=(s:Snapshot)=>{setSnapshot(s);localStorage.setItem(STORE,JSON.stringify(s));};
- const refresh=useCallback(async()=>{try{const cfg=import.meta.env.DEV?demoConfig:await request<PlatformConfig>('/api/config');const next=cfg.mode==='demo'?readDemo():await request<Snapshot>('/api/territories');if(cfg.mode!=='demo'&&(next.source!=='chain'||next.tokens.some(t=>t.mint.startsWith('demo-'))))throw new Error('La source des marchés ne correspond pas au monde.');configRef.current=cfg;setConfig(cfg);setSnapshot(next);ready.current=true;setError(null);}catch(e){ready.current=false;setError(e instanceof Error?e.message:'Impossible de charger le monde.');}finally{setLoading(false);}},[]);
- useEffect(()=>{void refresh();const id=setInterval(()=>{if(document.visibilityState==='visible'&&!lock.current)void refresh();},15000);return()=>clearInterval(id);},[refresh]);
- useEffect(()=>{const p=window.phantom?.solana??window.solana;const onChange=(key:import('@solana/web3.js').PublicKey|null)=>setWallet(key?.toBase58()??null);const onDisconnect=()=>setWallet(null);p?.on?.('accountChanged',onChange);p?.on?.('disconnect',onDisconnect);return()=>{p?.removeListener?.('accountChanged',onChange);p?.removeListener?.('disconnect',onDisconnect);};},[]);
- const execute=async(action:()=>Promise<void>)=>{if(lock.current)return;lock.current=true;setBusy(true);setError(null);setNotice(null);try{await action();}catch(e){setError(e instanceof Error?e.message:'Action interrompue.');throw e;}finally{lock.current=false;setBusy(false);}};
- const connect=async()=>{await execute(async()=>{const result=await phantom().connect();setWallet(result.publicKey.toBase58());setNotice('Wallet Phantom connecté.');});};
- const disconnect=async()=>{await execute(async()=>{await phantom().disconnect();setWallet(null);});};
- const createToken=async(input:CreateTokenInput)=>execute(async()=>{
- if(!ready.current)throw new Error('Attends le chargement de la configuration.');
- const name=input.name.trim(),symbol=input.symbol.trim().toUpperCase();if(!name||new TextEncoder().encode(name).length>32||! /^[A-Z0-9]{1,10}$/.test(symbol))throw new Error('Nom : 32 octets maximum ; symbole : 1 à 10 lettres ou chiffres.');
- const cfg=configRef.current;
+ const [config,setConfig]=useState<PlatformConfig>({...demoConfig,creationEnabled:false}),[snapshot,setSnapshot]=useState<Snapshot>({tokens:[],updatedAt:'',slot:null,source:'chain',currency:'USD'}),[loading,setLoading]=useState(true),[error,setError]=useState<string|null>(null),[wallet,setWallet]=useState<string|null>(null),[busy,setBusy]=useState(false),[notice,setNotice]=useState<string|null>(null);
+ const ready=useRef(false),lock=useRef(false),refreshing=useRef(false),configRef=useRef(config);
+ const refresh=useCallback(async()=>{
+ if(refreshing.current)return;refreshing.current=true;
+ try{
+  const state=import.meta.env.DEV?{config:demoConfig,snapshot:readDemo()}:await stateRequest();
+  if(state.config.mode!=='demo'&&(state.snapshot.source!=='chain'||state.snapshot.tokens.some(t=>t.mint.startsWith('demo-'))))throw new Error('Source des marchés incohérente.');
+  configRef.current=state.config;setConfig(state.config);setSnapshot(state.snapshot);ready.current=true;setError(null);
+  if(state.config.mode!=='demo'&&pending().length){try{if(await register(pending()[0]))setNotice('Le token créé est enregistré. Actualise la carte pour le retrouver.');}catch{setNotice('Une création confirmée attend encore son enregistrement. Le reçu est conservé ; aucun nouveau paiement ne sera envoyé.');}}
+ }catch(e){ready.current=false;setError(e instanceof Error?e.message:'Service indisponible.');}finally{setLoading(false);refreshing.current=false;}
+ },[]);
+ useEffect(()=>{void refresh();const timer=setInterval(()=>{if(document.visibilityState==='visible'&&!lock.current)void refresh();},15000);return()=>clearInterval(timer);},[refresh]);
+ useEffect(()=>{const provider=window.phantom?.solana??window.solana;const change=(p:import('@solana/web3.js').PublicKey|null)=>setWallet(p?.toBase58()??null);const disconnect=()=>setWallet(null);provider?.on?.('accountChanged',change);provider?.on?.('disconnect',disconnect);return()=>{provider?.removeListener?.('accountChanged',change);provider?.removeListener?.('disconnect',disconnect);};},[]);
+ async function execute(action:()=>Promise<void>){if(lock.current)return;lock.current=true;setBusy(true);setError(null);try{await action();}catch(e){setError(e instanceof Error?e.message:'Action interrompue.');throw e;}finally{lock.current=false;setBusy(false);}}
+ const connect=()=>execute(async()=>{const p=await phantom().connect();setWallet(p.publicKey.toBase58());setNotice('Phantom connecté. Chaque création nécessite ta signature.');});
+ const disconnect=()=>execute(async()=>{await phantom().disconnect();setWallet(null);});
+ const createToken=(input:CreateTokenInput)=>execute(async()=>{
+ if(!ready.current||!configRef.current.creationEnabled)throw new Error('Création momentanément indisponible. Actualise la configuration.');
+ const cfg=configRef.current,name=input.name.trim(),symbol=input.symbol.trim().toUpperCase();if(!name||new TextEncoder().encode(name).length>32||! /^[A-Z0-9]{1,10}$/.test(symbol))throw new Error('Nom : 32 octets maximum ; symbole : 1 à 10 lettres ou chiffres.');
  if(cfg.mode==='demo'){
- const seed=parseUnits(input.seedAmount,6);if(seed<=0n)throw new Error('La réserve doit être positive.');
- const current=readDemo();if(current.tokens.length>=100)throw new Error('Limite de démonstration atteinte. Réinitialise le monde.');
- const token=revalue({mint:`demo-${crypto.randomUUID()}`,pool:'demo',name,symbol,color:palette[current.tokens.length%palette.length],creator:wallet??'Vous (simulation)',supply:'1000000000000000',baseReserve:'1000000000000000',quoteReserve:seed.toString(),decimals:6,quoteDecimals:6,marketCap:0,price:0,change24h:null,createdAt:Math.floor(Date.now()/1000)});
- updateDemo({...current,tokens:[...current.tokens,token],updatedAt:new Date().toISOString()});setNotice(`${symbol} créé en simulation. Achète ses premiers tokens pour faire apparaître son territoire.`);
- }else{const sig=await createOnChain(cfg,input);setNotice(`Token créé sur Solana. Transaction : ${sig}`);await refresh();}
+  const old=readDemo();if(old.tokens.length>=100)throw new Error('Limite de démonstration atteinte.');
+  const token=revalue({mint:`demo-${crypto.randomUUID()}`,pool:'',name,symbol,color:palette[old.tokens.length%palette.length],creator:wallet??'Simulation',supply:'1000000000000000',baseReserve:'0',quoteReserve:'0',decimals:6,quoteDecimals:6,marketCap:0,price:0,change24h:null,createdAt:Math.floor(Date.now()/1000)});
+  const next={...old,tokens:[...old.tokens,token],updatedAt:new Date().toISOString()};localStorage.setItem(STORE,JSON.stringify(next));setSnapshot(next);setNotice(`${symbol} créé en simulation. Sans cours de marché, son territoire vaut zéro.`);return;
+ }
+ if(pending().length)throw new Error('Une création attend encore son enregistrement. Actualise avant de signer une nouvelle création.');
+ let result;try{result=await createOnChain(cfg,{name,symbol});}catch(e){if(e instanceof PendingTransactionError)remember(e.signature);throw e;}remember(result.signature);
+ setNotice(`Token créé sur Solana : ${result.mint}. Finalisation et enregistrement en cours…`);
+ try{let done=false;for(let attempt=0;attempt<10;attempt++){if(await register(result.signature)){done=true;break;}await new Promise(r=>setTimeout(r,4000));}
+  setNotice(done?`${symbol} créé et enregistré. Transaction : ${result.signature}`:`Création envoyée : ${result.signature}. Le reçu est conservé ; l’enregistrement sera repris à l’actualisation sans nouveau paiement.`);
+ }catch{setNotice(`Token créé : ${result.mint}. Enregistrement différé ; reçu conservé (${result.signature}). Actualise sans recréer le token.`);}
+ await refresh();
  });
- const trade=async(input:TradeInput)=>execute(async()=>{
- if(!ready.current)throw new Error('Configuration indisponible.');const cfg=configRef.current;
- if(cfg.mode==='demo'){
- const current=readDemo(),token=current.tokens.find(t=>t.mint===input.token.mint);if(!token)throw new Error('Token introuvable.');
- const amount=parseUnits(input.amount,6);const buy=input.side==='buy';
- if(!buy&&(holdings.current[token.mint]??0n)<amount)throw new Error('Achète d’abord ces tokens dans cette session de démonstration.');
- const x=BigInt(token.baseReserve),y=BigInt(token.quoteReserve),out=calculateOutput(amount,buy?y:x,buy?x:y);minimumOutput(out,input.slippageBps);
- holdings.current[token.mint]=(holdings.current[token.mint]??0n)+(buy?out:-amount);
- const updated=revalue({...token,baseReserve:(buy?x-out:x+amount).toString(),quoteReserve:(buy?y+amount:y-out).toString()});
- updateDemo({...current,tokens:current.tokens.map(t=>t.mint===token.mint?updated:t),updatedAt:new Date().toISOString()});setNotice(`${buy?'Achat':'Vente'} simulé. Le territoire a été recalculé ; aucun fonds réel utilisé.`);
- }else{const sig=await tradeOnChain(cfg,input);setNotice(`Échange confirmé. Transaction : ${sig}`);await refresh();}
- });
- const resetDemo=()=>{if(configRef.current.mode!=='demo'||lock.current)return;holdings.current={};updateDemo(initialDemo());setNotice('Le monde de démonstration a été réinitialisé.');setError(null);};
+ const trade=async(_input:TradeInput)=>{throw new Error('Les échanges se font sur les marchés externes disponibles pour ce token.');};
+ const resetDemo=()=>{if(configRef.current.mode!=='demo'||lock.current)return;const next=initialDemo();localStorage.setItem(STORE,JSON.stringify(next));setSnapshot(next);setError(null);};
  return {config,snapshot,loading,error,wallet,busy,notice,connect,disconnect,refresh,createToken,trade,resetDemo};
 }
