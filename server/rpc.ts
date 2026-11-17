@@ -16,8 +16,14 @@ export async function boundedJson<T>(response: Response,limit = 2_000_000): Prom
   return JSON.parse(new TextDecoder().decode(bytes)) as T;
 }
 export async function rpc<T>(endpoint: string,method: string,params: unknown[]): Promise<T> {
-  const response = await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(8_000)});
-  const envelope = await boundedJson<{result?:T;error?:unknown}>(response);
+  let response: Response | undefined;
+  for(let attempt=0;attempt<3;attempt++){
+   response = await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(8_000)});
+   if(![429,502,503,504].includes(response.status)||attempt===2)break;
+   await response.body?.cancel();
+   await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
+  }
+  const envelope = await boundedJson<{result?:T;error?:unknown}>(response!);
   if (envelope.error || envelope.result === undefined) throw new PublicError('Lecture Solana impossible. Réessayez dans quelques instants.');
   return envelope.result;
 }
