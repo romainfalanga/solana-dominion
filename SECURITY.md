@@ -1,25 +1,25 @@
 # Sécurité et limites
 
-Cette livraison utilise les programmes SPL existants sur mainnet, sans smart contract personnalisé. Aucun audit externe de l’application n’est revendiqué. Les tests locaux et simulations ne prouvent pas l’absence de failles.
+L’application utilise Meteora DBC, DAMMv2, Metaplex et les programmes SPL existants. Aucun audit externe de l’application n’est revendiqué. Les tests et simulations ne prouvent pas l’absence de failles ni la sécurité future des programmes externes.
 
-## Revue des dépendances — 17 novembre 2026
+## Contrôle des transactions
 
-`npm audit --omit=dev` : 9 entrées transitives, dont 3 élevées et 6 modérées. Elles ne sont pas masquées par une rétrogradation ni par des overrides majeurs non vérifiés.
+Phantom est le seul signataire du wallet. Le message signé est comparé au message préparé. Le minimum reçu affiché est transmis à la transaction, sans remplacement par un nouveau devis implicite. Les clés éphémères de création ne sont pas conservées sur le serveur.
 
-- **bigint-buffer** (GHSA-3gc7-fjrx-p6mg) : le navigateur embarque la conversion JavaScript, sans chargeur natif. Le Worker contient le chargeur et son fallback JS, mais aucun addon `.node` n’est livré ni exécutable dans Workers ; le débordement C identifié ne s’applique pas à cet artefact. En revanche Node local dispose effectivement du module natif. Les appels SPL actuels utilisent des champs u64 de 8 octets ; aucune garantie n’est donnée pour d’autres usages ou futurs scripts.
-- **stream-json** : absent des bundles examinés. Le chemin web3 utilisé est `jayson/lib/client/browser`, fondé sur `JSON.parse`, pas les filtres stream-json concernés.
-- **uuid** : le chemin jayson utilise `v4()` sans buffer utilisateur. Les avis concernent les variantes v3/v5/v6 avec buffer fourni ; aucun tel appel n’a été trouvé dans les chemins examinés.
+Le registre n’accepte que les transactions finalisées dont les comptes, programmes, politiques, autorités et soldes sont vérifiés. Configuration partagée et lancement sont deux étapes distinctes ; leurs reçus sont conservés avant diffusion. Une transaction échouée peut néanmoins consommer des frais réseau. Les comptes de configuration créés sont durables même si le créateur annule ensuite le lancement.
 
-Preuves : bundles issus de `.cloudflare/output/v1/`, sources installées de bigint-buffer, web3 et jayson. Cette analyse de portée n’est pas un correctif des dépendances. Avant mainnet, migrer vers une chaîne SDK maintenue sans ces alertes puis refaire les tests complets des transactions et du runtime. Ne pas appliquer automatiquement le downgrade SPL proposé par npm audit.
+Les fonds de marché sont détenus par les programmes Solana, pas par D1. Les LP de migration sont verrouillées ; la trésorerie partenaire reçoit des frais selon la configuration. La rotation de quote ne modifie pas les réserves ou politiques des anciens marchés.
 
-## Modèle actuel
+## Dépendances, 17 novembre 2026
 
-Le créateur signe une transaction standard atomique. Aucun serveur ne détient sa clé privée. La base D1 accepte uniquement les créations dont la transaction finalisée est vérifiée, incluant le paiement, le mint, les autorités et le mémo. Les inscriptions sont idempotentes ; un changement de token de paiement conserve l’historique des configurations.
+Après ajout du SDK Meteora 2.0.0, `npm audit --omit=dev` signale 13 entrées transitives : 6 élevées, 7 modérées, aucune critique. Les entrées parents peuvent répéter une même vulnérabilité sous-jacente. Aucun downgrade majeur non vérifié n’a été appliqué.
 
-La carte n’invente pas de prix : sans cotation externe le territoire est nul. Le prix d’un marché peu liquide peut être manipulé. Aucun programme de trading ni réserve interne ne sont déployés.
+- `bigint-buffer` : avis de débordement du module natif C. Les bundles navigateur et Workers utilisent JavaScript sans addon natif livré. Node local peut charger l’addon ; les scripts limitent leurs entrées et les champs SPL lus sont bornés.
+- `toml` via Anchor : avis de pollution de prototype et déni de service du parseur. L’application n’accepte ni ne parse de TOML utilisateur ; la configuration publique est du JSON. Cette limitation d’exposition ne corrige pas la dépendance.
+- Les autres avis transitifs (notamment chaîne web3) doivent être réévalués lors des mises à jour. Les SDK sont verrouillés par package-lock ; ne pas remplacer leurs versions sans rejouer les transactions et le Worker.
 
-## Confirmation et frais
+## Prix et limites opérationnelles
 
-Une signature est conservée avant diffusion. Si la confirmation est incertaine, actualiser et consulter Explorer plutôt que recréer le token. En cas d’échec on-chain, la création et le paiement applicatif sont annulés ensemble, mais Solana peut conserver les frais réseau. Les clés de mint temporaires ne sont pas des autorités après révocation.
+La carte utilise des prix spot et l’offre totale non brûlée, pas une supply circulante auditée. Les marchés peu liquides peuvent être manipulés. La quote n’est ni une parité garantie ni une réserve assurée. Le token plateforme participe au même dénominateur.
 
-Vitest 5.1.0 remplace l’ancienne version de tests affectée par les alertes tinypool ; les risques transitifs SDK détaillés plus haut restent documentés.
+Les RPC et DexScreener sont externes. Les lectures sont finalisées mais les lots peuvent venir de slots successifs. Les prix externes et les comptes ne constituent pas un snapshot atomique commun. Une absence de cotation conduit à zéro surface. Le registre est limité à 1 000 lancements dans cette version et refuse un résultat tronqué.

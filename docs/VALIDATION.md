@@ -1,28 +1,29 @@
-# Validation de la version sans programme personnalisé
+# Validation DBC — 17 novembre 2026
 
-La version active utilise les programmes SPL existants. Le code Anchor et ses anciens budgets sont archivés dans `archive/custom-program` et ne sont pas déployés.
+## Programme réel, sans fonds publics dépensés
 
-## Transactions
+`scripts/test-dbc-local.mjs` utilise les mêmes builders TypeScript que Phantom. Un validateur local exécute les binaires mainnet lus depuis les comptes programme DBC, Metaplex et DAMMv2. Tous les wallets et fonds du test sont locaux et éphémères.
 
-Le script `scripts/test-standard-launch.mjs` utilise le même builder TypeScript que le navigateur, sur un validateur Solana local standard. Vérifications : émission fixe au créateur, suppression des autorités, paiement exact Token-2022, mémo signé, limites d’entrée, rollback intégral si paiement insuffisant, taille maximale du paquet inférieure à1232octets. La fixture issue de la transaction locale finalisée est enregistrée dans `tests/fixtures/standard-launch.json`, sans clé privée.
+Scénarios exécutés avec succès : configuration partagée, quote Token-2022 avec métadonnées, achat initial, allocation inférieure à la supply totale, autorités révoquées, paiement réel dans le pool, achat suivant, vente, rollback du pool et du mint si solde insuffisant. Les transactions finalisées et comptes publics sont enregistrés dans `tests/fixtures/dbc-launch.json`, sans clés privées.
 
-Une simulation a aussi été exécutée contre le RPC mainnet avec le wallet public du propriétaire et le token CHOULE réel. Résultat : `simulationError:null`,93967unités de calcul. **Aucune transaction n’a été envoyée, aucune signature utilisateur n’a été obtenue, aucun fonds n’a été dépensé.** La simulation avec vérification de signatures désactivée teste l’exécution des instructions, pas l’autorisation du wallet.
+Résultat de la politique par défaut : 1 000 unités quote achètent 90 163 113,142667 tokens, soit 9,0163113143 % de la supply. C’est un résultat de test de cette courbe, pas un rendement ou une garantie de prix. Paquets : configuration avec mémo 868 octets ; pool et achat 1 004 octets, sous la limite Solana 1 232.
 
-## Application et registre
+Avec `--migration` : achat partiel atteignant le seuil, migration permissionless effective, compte pool DAMMv2 vérifié et deuxième migration refusée. Paquet 1 139 octets. Le validateur local finance aussi l’autorité publique du protocole, dont le solde mainnet a été constaté à 68,824494740 SOL lors de la vérification ; ce financement local reproduit le compte protocolaire existant, pas une réserve demandée à l’opérateur Dominion.
 
-Tests de la validation des mints et extensions, des transactions incertaines, du calcul des territoires et du registre de créations. Le vérificateur reçoit uniquement une signature et relit la transaction finalisée ; il ne fait pas confiance à un nom/montant envoyé par le navigateur.
+## Simulation mainnet
 
-Le navigateur est testé avec l’API de lecture simulée : état vide sans fausses capitalisations, coût exact et frais SOL affichés, blocage sans Phantom, capitalisations USD, liens externes, mobile et absence d’erreurs JavaScript. Aucun test automatisé ne signe avec le wallet réel.
+`scripts/simulate-dbc-mainnet.mjs` simule configuration + pool + achat de **1 CHOULE** contre le programme mainnet : `simulationError:null`, 184 820 unités de calcul, paquet 1 205 octets. La simulation utilise des métadonnées raccourcies ; le parcours utilisateur conserve deux transactions initiales pour ses métadonnées et son mémo complet. Aucun broadcast, aucune clé privée du propriétaire, aucune dépense réelle. `sigVerify:false` vérifie l’exécution, pas l’autorisation Phantom.
 
-## Limites
+## Application
 
-Pas de cotation/liquidité automatique. Les tokens non cotés ont zéro surface. Nom/symbole existent dans le mémo/registre, pas dans un compte Metaplex. Les données prix sont celles d’un service externe et peuvent être manipulées sur les marchés peu liquides. Les quotas Cloudflare/RPC s’appliquent. Aucun audit externe n’est revendiqué.
+74 tests automatisés réussis : calcul économique, règles de compte, configurations, transactions incertaines, reçus expirés, preuves de lancement, politique historique, valorisation, token plateforme, rotation et conditions de migration. Les tests du registre utilisent les fixtures réelles et SQLite avec les migrations D1.
 
-## Contrôles du 17 novembre 2026
+Tests UI avec lectures simulées : carte prioritaire, logo, CA copiable, absence des barres et de la page classement retirées, règles sans statistiques, devis d’achat initial, rejet des réponses périmées, minimum reçu inchangé pour achat/vente, quotes historiques, bouton migration, mobile 390/320 pixels sans débordement.
 
-- 35 tests automatisés réussis, compilation TypeScript et build de production réussis.
-- 11 contrôles de transaction exécutés sur le validateur local avec le même builder que Phantom ; paquet maximal testé : 1014 octets.
-- Tests navigateur de production : état vide, modal de création, blocage sans Phantom, valorisation USD et affichage mobile.
-- Site public contrôlé dans Chromium sans API simulée : configuration mainnet CHOULE, création activée, registre vide, modal de paiement, RPC accessible depuis le navigateur (HTTP 200), aucune erreur JavaScript.
-- Les tests mainnet restent des simulations sans signature du propriétaire ni envoi. La première création réelle via Phantom reste à effectuer par un utilisateur.
-- RPC public gratuit : des limitations temporaires peuvent rendre les lectures indisponibles. Le serveur retente les réponses HTTP temporaires ; le navigateur actualise automatiquement les données. Aucun faux territoire n’est injecté.
+## Limites de ces preuves
+
+Aucune création réelle signée par le propriétaire n’a été effectuée. Aucun audit externe n’est revendiqué. La disponibilité RPC/DexScreener et l’indexation du marché migré restent externes. Après migration, l’application dirige vers un marché externe ; elle ne construit pas les swaps DAMMv2 elle-même.
+
+## Interface de production
+
+Le bundle réel a passé le test Playwright avec le SDK DBC réel et un RPC de lecture sur fixture : estimation de 1 000 unités de quote, part de supply, deux signatures initiales, blocage sans Phantom, carte immédiate, logo, règles sans statistiques, absence de page classement et de sous-barre, écrans 390 et 320 px sans débordement. Aucun envoi de transaction. Le Worker compilé a également répondu HTTP 200 dans Miniflare avec D1 éphémère.

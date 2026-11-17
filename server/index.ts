@@ -1,7 +1,9 @@
-import { PublicError,type Env,type Context } from './types';
+import { PublicKey } from '@solana/web3.js';
+import { PublicError,database,type RegisteredLaunch,type Env,type Context } from './types';
 import { settings,resolveConfig,recordConfiguration } from './settings';
 import { readSnapshot } from './market';
 import { registerLaunch,validateSignature } from './launches';
+import { registerCurveConfig } from './curves';
 export type { Env } from './types';
 export { resolveConfig,readSnapshot };
 
@@ -13,8 +15,8 @@ function securityHeaders(env: Env): Headers {
 }
 function cacheKey(origin: string,path: string,env: Env): Request {
   const cfg = settings(env),url = new URL(origin + path);
-  url.searchParams.set('schema','registry-1');
-  url.searchParams.set('config',JSON.stringify([cfg.cluster,cfg.paymentMint,cfg.treasury,cfg.creationFeeTokens,cfg.publicRpc,env.CREATION_ENABLED === 'true']));
+  url.searchParams.set('schema','registry-dbc-2');
+  url.searchParams.set('config',JSON.stringify([cfg.cluster,cfg.paymentMint,cfg.treasury,cfg.publicRpc,env.CREATION_ENABLED === 'true',cfg.launch]));
   return new Request(url.toString());
 }
 async function signatureBody(request: Request): Promise<string> {
@@ -35,13 +37,21 @@ export default {
     const cache = typeof caches !== 'undefined' ? (caches as CacheStorage & {default?:Cache}).default : undefined;
     let response: Response;
     try {
-      if (url.pathname === '/api/launches' && request.method === 'POST') {
+      if (url.pathname === '/api/curve-config' && request.method === 'POST') {
+        const signature = await signatureBody(request),registered = await registerCurveConfig(env,signature);
+        response = json(registered,registered.created ? 201 : 200);
+        if (cache) ctx.waitUntil(Promise.all(['/api/state','/api/config','/api/territories'].map(path => cache.delete(cacheKey(url.origin,path,env)))));
+      } else if (url.pathname === '/api/launches' && request.method === 'POST') {
         const signature = await signatureBody(request),registered = await registerLaunch(env,signature);
         response = json(registered,registered.created ? 201 : 200);
         if (cache) ctx.waitUntil(Promise.all(['/api/state','/api/territories'].map(path => cache.delete(cacheKey(url.origin,path,env)))));
       } else if (!['GET','HEAD'].includes(request.method)) response = json({error:'Méthode non autorisée.',code:'METHOD_NOT_ALLOWED'},405);
-      else if (url.pathname === '/api/health') response = json({status:'ok',service:'solana-dominion',architecture:'standard-spl-registry',version:'0.2.0'});
-      else if (['/api/state','/api/config','/api/territories'].includes(url.pathname)) {
+      else if (url.pathname === '/api/health') response = json({status:'ok',service:'solana-dominion',architecture:'meteora-dbc',version:'0.3.0'});
+      else if (url.pathname.startsWith('/api/metadata/')) {
+        let mint: string;try {mint = new PublicKey(url.pathname.slice('/api/metadata/'.length)).toBase58();} catch {throw new PublicError('Adresse de token non valide.',400,'INVALID_MINT');}
+        const row = await database(env).prepare('SELECT * FROM launches WHERE cluster = ? AND mint = ?').bind(settings(env).cluster,mint).first<RegisteredLaunch>();
+        response = row ? json({name:row.name,symbol:row.symbol,description:'Token créé sur Dominion, plateforme de territoires Solana.',external_url:`${url.origin}/?mint=${mint}`}) : json({error:'Ce token n’est pas encore enregistré.',code:'NOT_FOUND'},404);
+      } else if (['/api/state','/api/config','/api/territories'].includes(url.pathname)) {
         const key = cacheKey(url.origin,url.pathname,env),hit = await cache?.match(key);
         if (hit) response = hit;
         else {
@@ -61,7 +71,7 @@ export default {
     }
     const headers = new Headers(response.headers);security.forEach((value,key) => headers.set(key,value));
     if (url.pathname.startsWith('/api/')) headers.set('Cache-Control','no-store');
-    if (response.status === 405) headers.set('Allow',url.pathname === '/api/launches' ? 'POST' : 'GET, HEAD');
+    if (response.status === 405) headers.set('Allow',['/api/launches','/api/curve-config'].includes(url.pathname) ? 'POST' : 'GET, HEAD');
     return new Response(request.method === 'HEAD' ? null : response.body,{status:response.status,headers});
   },
 };

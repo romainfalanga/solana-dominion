@@ -4,6 +4,8 @@ import { getAssociatedTokenAddressSync,TOKEN_PROGRAM_ID,TOKEN_2022_PROGRAM_ID,un
 import { PublicError,database,type Env,type ParsedInstruction,type ParsedTransaction,type RegisteredLaunch,type RpcAccount,type RpcContext,type SavedConfiguration,type TokenBalance } from './types';
 import { accountInfo,rpc } from './rpc';
 import { settings,verifyNetwork } from './settings';
+import { DBC_PROGRAM_ID } from '../src/lib/dbc';
+import { registerDbcLaunch } from './curves';
 const MEMO_PROGRAM = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
 const SUPPLY = 1_000_000_000_000_000n;
 interface Receipt { app:'dominion';version:1;configVersion:string;mint:string;name:string;symbol:string }
@@ -87,6 +89,7 @@ export async function registerLaunch(env: Env,signature: string): Promise<{creat
   const tx = await rpc<ParsedTransaction | null>(current.privateRpc,'getTransaction',[signature,{encoding:'jsonParsed',commitment:'finalized',maxSupportedTransactionVersion:0}]);
   if (!tx) throw new PublicError('La transaction n’est pas encore finalisée. Réessayez ce même reçu, sans créer un nouveau token.',409,'TRANSACTION_PENDING');
   if (!tx.meta || tx.meta.err !== null) invalid('La transaction a échoué sur Solana.');
+  if (tx.transaction.message.instructions.some(ix => ix.programId === DBC_PROGRAM_ID.toBase58())) return registerDbcLaunch(env,signature,tx);
   const receipt = receiptFrom(tx);
   const saved = await db.prepare('SELECT * FROM configurations WHERE version = ? AND cluster = ?').bind(receipt.configVersion,current.cluster).first<SavedConfiguration>();
   if (!saved) throw new PublicError('Cette configuration de création n’a pas été publiée par la plateforme.',409,'CONFIGURATION_UNKNOWN');

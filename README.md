@@ -1,39 +1,42 @@
 # Dominion
 
-Launchpad Solana utilisant les programmes SPL existants, sans déploiement de smart contract personnalisé.
+Launchpad et carte de compétition sur Solana : https://solana-dominion.romainfalanga83.workers.dev
 
-**Site : https://solana-dominion.romainfalanga83.workers.dev**
+## Token de plateforme
 
-## Remplacer le token de paiement
+Modifier uniquement `paymentMint` dans [`config/platform.json`](config/platform.json), puis enregistrer sur `main`. GitHub teste et Cloudflare déploie. Le mint, le symbole, les décimales et le programme SPL sont vérifiés sur Solana. Le token de plateforme rejoint automatiquement la compétition, avec sa capitalisation réelle.
 
-Dans [`config/platform.json`](config/platform.json), modifier uniquement `paymentMint`, puis enregistrer sur `main`. GitHub déclenche les tests et Cloudflare déploie. Symbole, décimales et programme SPL sont détectés depuis Solana. Les anciennes créations restent dans le registre.
+Les anciens marchés conservent leur quote et leur politique d’origine : changer le token de plateforme ne convertit pas les réserves existantes et ne bloque pas leurs ventes.
 
-Le token de test est l’adresse fournie par le propriétaire, `31CZR8AgCjGsbkjJGUznY99hiKTQkX6J2zxiwN9Mpump` (CHOULE sur chaîne). Le tarif de création est `creationFeeTokens` (1 token par défaut), reçu par `treasury`. Ces deux paramètres sont également configurables.
+## Lancement et échanges
 
-## Création réelle
+Le programme existant **Meteora Dynamic Bonding Curve** crée le token et son marché contre le token de plateforme. Le créateur choisit un achat initial ; il reçoit la quantité achetée, jamais toute la supply par défaut. La supply initiale est de 1 milliard, avec 6 décimales, sans autorité de mint supplémentaire ni de gel.
 
-Phantom signe une transaction atomique qui crée un mint SPL classique, attribue un milliard de tokens au créateur, révoque l’émission, transfère le paiement configuré et inscrit un mémo signé. En cas d’échec, aucune création ni aucun paiement applicatif n’est conservé ; les frais réseau d’une transaction échouée peuvent néanmoins être facturés par Solana.
+Paramètres de départ : capitalisation initiale de 10 000 unités de quote, seuil de capitalisation de migration de 1 000 000 unités de quote, frais de swap constants de 1 %. Ces paramètres sont dans `launch` ; ils définissent une courbe, pas une garantie de prix ou une parité. Aucun forfait de création en quote n’est ajouté. Les frais de protocole sont inclus dans le devis. Les comptes, les frais Metaplex et les transactions nécessitent du SOL du signataire.
 
-Le créateur paie ses frais réseau et comptes Solana. L’opérateur n’a pas à financer le déploiement d’un programme. Aucun fonds n’est détenu par le serveur et aucune clé privée n’y est requise.
+La première utilisation d’une quote/politique crée une configuration partagée puis un pool avec achat initial : deux signatures Phantom. Les lancements suivants réutilisent la configuration : une signature. Le solde quote et un budget SOL conservateur sont vérifiés avant la première signature. Les reçus de confirmation incertaine sont conservés avant diffusion ; une reprise ne doit pas repayer la configuration.
 
-Le serveur vérifie la transaction finalisée avant inscription D1. Nom et symbole sont enregistrés dans le mémo et le registre Dominion ; le token n’a pas de compte de métadonnées Metaplex, donc les wallets externes peuvent afficher son adresse plutôt que son nom.
+Achats et ventes intégrés avant migration, minimum reçu fixé depuis le devis affiché. À l’approche du seuil, un achat peut être partiel : le montant saisi est un maximum. À la fin de la courbe, une migration permissionless vers DAMMv2 est proposée, avec liquidité verrouillée ; les échanges du marché migré sont ensuite accessibles sur le marché externe.
 
-## Territoires et prix
+## Carte
 
-Prix USD de la paire Solana la plus liquide disponible sur DexScreener × supply actuelle vérifiée sur Solana. Aucun prix inventé, aucune réserve interne. Sans marché coté, capitalisation zéro et présence dans la liste d’attente. Les échanges/liquidités se font sur les marchés externes ; créer un token ici ne lui crée pas automatiquement un marché ou une liquidité. La recherche ne change pas le dénominateur global de la carte.
+La surface représente `market cap du token / somme des market caps`. Pour une courbe active : prix du token en quote × cours USD de la quote × offre actuelle. Le token de plateforme et les marchés migrés utilisent un cours externe avec liquidité. Absence de valorisation vérifiable : zéro surface, présence maintenue dans la liste. Une recherche ne change pas le dénominateur.
 
-## Développement
+## Identité
+
+Logo : [`public/brand/dominion-token.png`](public/brand/dominion-token.png), intégré au site et au favicon. Métadonnées prêtes pour le futur token : [`public/brand/token-metadata.json`](public/brand/token-metadata.json). Ces fichiers ne modifient pas les métadonnées immuables du token CHOULE existant.
+
+## Développement et preuves
 
 ```sh
 npm ci
-npm run dev
 npm test
 npm run build
 npm run preview
+npm run test:ui
+LOCAL_RPC_URL=http://127.0.0.1:19699 npm run test:dbc
 ```
 
-`dev` montre une simulation locale explicite ; le site de production utilise l’API mainnet et le registre D1. Pour tester la transaction sans dépenser de SOL réel : démarrer un validateur local standard puis `LOCAL_RPC_URL=http://127.0.0.1:8899 npm run test:standard`.
+Le test DBC exige un validateur local chargé avec les programmes DBC et Metaplex ; `--migration` nécessite également DAMMv2 et sa configuration publique. Les clés locales sont éphémères. La simulation mainnet `scripts/simulate-dbc-mainnet.mjs` n’utilise aucun secret et interdit la diffusion de transactions.
 
-La CI teste le code et le navigateur avec des réponses de lecture simulées. Les scénarios du SDK de création sont également exécutés sur un validateur local. Aucune transaction mainnet n’est envoyée automatiquement par les tests.
-
-Voir [mise en service](docs/MISE-EN-SERVICE.md), [validation](docs/VALIDATION.md) et [sécurité](SECURITY.md).
+Le vieux lancement SPL à frais fixes est conservé seulement pour le registre historique et ses tests ; il n’est plus le parcours de création actif. Voir [validation](docs/VALIDATION.md), [suivi](docs/EVOLUTION.md), [mise en service](docs/MISE-EN-SERVICE.md) et [sécurité](SECURITY.md).

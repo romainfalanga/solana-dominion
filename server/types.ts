@@ -17,15 +17,20 @@ export interface Context { waitUntil(promise: Promise<unknown>): void }
 export interface SavedConfiguration {
   version: string; cluster: 'devnet' | 'mainnet-beta'; payment_mint: string; payment_program: string;
   fee_atomic: string; treasury: string; quote_decimals: number;
+  launch_model?: 'standard'|'dbc';curve_version?:string|null;dbc_config?:string|null;curve_json?:string|null;
 }
 export interface RegisteredLaunch {
   cluster: 'devnet' | 'mainnet-beta'; mint: string; signature: string; creator: string; name: string; symbol: string;
   payment_mint: string; payment_program: string; fee_atomic: string; treasury: string; config_version: string;
   created_at: number; slot: number;
+  model?:'standard'|'dbc';pool?:string|null;curve_config?:string|null;initial_quote_atomic?:string|null;
+}
+export interface SavedCurve {
+  cluster:'devnet'|'mainnet-beta';payment_mint:string;curve_version:string;config_address:string;signature:string;creator:string;platform_config_version:string;policy_json:string;slot:number;
 }
 export interface RpcAccount { data: [string,string]; owner: string; executable: boolean; lamports: number; rentEpoch?: number }
 export interface RpcContext<T> { context: {slot:number}; value: T }
-export interface ParsedInstruction { programId: string; parsed?: string | { type: string; info: Record<string,unknown> } }
+export interface ParsedInstruction { programId: string;data?:string;accounts?:string[]; parsed?: string | { type: string; info: Record<string,unknown> } }
 export interface TokenBalance { accountIndex: number; mint: string; owner?: string; programId?: string; uiTokenAmount: { amount: string; decimals: number } }
 export interface ParsedTransaction {
   slot: number; blockTime: number | null;

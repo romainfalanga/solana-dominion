@@ -3,7 +3,7 @@ import {Connection,PublicKey,Keypair,Transaction,VersionedTransaction} from '@so
 import type {Phantom} from './wallet';
 export type TransactionConnection=Pick<Connection,'rpcEndpoint'|'getLatestBlockhash'|'simulateTransaction'|'sendRawTransaction'|'confirmTransaction'|'getSignatureStatuses'|'getBlockHeight'>;
 export type PendingStore=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
-export class PendingTransactionError extends Error { constructor(readonly signature:string){super(`Confirmation incertaine : ${signature}. Le reçu est conservé ; ne recrée pas le token. Actualise pour vérifier son enregistrement.`);this.name='PendingTransactionError';} }
+export class PendingTransactionError extends Error { constructor(readonly signature:string,readonly lastValidBlockHeight?:number,readonly rpcEndpoint?:string){super(`Confirmation incertaine : ${signature}. Le reçu est conservé ; ne recrée pas le token. Actualise pour vérifier son enregistrement.`);this.name='PendingTransactionError';} }
 interface Pending {signature:string;lastValidBlockHeight:number;}
 const storage=():PendingStore=>window.localStorage;
 const key=(c:TransactionConnection,p:PublicKey)=>`dominion-pending:${c.rpcEndpoint}:${p.toBase58()}`;
@@ -46,6 +46,6 @@ export async function sendWalletTransaction(c:TransactionConnection,provider:Pha
   if(recovered?.confirmationStatus==='confirmed'||recovered?.confirmationStatus==='finalized'){
    store.removeItem(key(c,payer));if(recovered.err)throw new Error(`Transaction rejetée par Solana : ${signature}.`);return signature;
   }
-  throw new PendingTransactionError(signature);
+  throw new PendingTransactionError(signature,block.lastValidBlockHeight,c.rpcEndpoint);
  }
 }

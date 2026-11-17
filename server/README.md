@@ -1,52 +1,47 @@
-# Registre de créations SPL et territoires
+# API des territoires et courbes Meteora DBC
 
-Cette version ne déploie aucun programme Solana propriétaire. Le navigateur construit une transaction signée dans Phantom utilisant uniquement les programmes System, SPL Token, Associated Token Account, SPL Token-2022 pour le paiement si nécessaire, et Memo. Le serveur ne possède aucune clé de signature et n’envoie aucune transaction.
+Les nouvelles créations utilisent le programme Meteora Dynamic Bonding Curve existant sur Solana, sans programme propriétaire. Le navigateur construit les transactions et Phantom les signe. Le serveur ne détient aucune clé et n’envoie aucune transaction. Les anciennes créations SPL restent dans le registre et conservent leur vérificateur historique.
 
-## Configuration unique
+## Configuration et historique
 
-`config/platform.json` définit `paymentMint`, `treasury`, `creationFeeTokens` et `cluster`. Les décimales et le programme du mint de paiement sont lus réellement sur Solana ; le montant atomique est dérivé du montant humain. Le symbole provient des métadonnées JSON parsed du mint. Sans symbole vérifiable, l’interface reçoit une adresse abrégée, jamais un nom inventé.
+`config/platform.json` définit le mint de paiement, la trésorerie, le réseau et les paramètres de courbe : capitalisations initiale et de migration exprimées en tokens de paiement, frais de trading en points de base. Le nouveau parcours DBC n’applique aucun forfait de création (`creationFeeAtomic: "0"`). Les anciens frais sont conservés uniquement dans les configurations historiques nécessaires à la vérification de reçus SPL déjà signés.
 
-Le serveur accepte les mints SPL classiques et les mints Token-2022 limités aux extensions MetadataPointer et TokenMetadata, sans autorité de gel. La validation est partagée avec le navigateur dans `src/lib/quoteMint.ts`.
+Le RPC doit retourner le hash genesis complet du réseau attendu. Le mint de paiement est lu réellement : programme, décimales et symbole issu des métadonnées. Sans symbole disponible, une adresse abrégée remplace le nom. Les mints SPL classiques et Token-2022 limités à MetadataPointer et TokenMetadata sont acceptés, sans autorité de gel. La validation est partagée avec le navigateur.
 
-Une version est calculée à partir du SHA-256 du JSON ordonné `{cluster,paymentMint,treasury,creationFeeAtomic,quoteTokenProgram}`, tronqué à 16 caractères hexadécimaux. Avant d’exposer cette version, l’API la conserve dans `configurations`. Les reçus de transactions utilisant une ancienne configuration publiée restent enregistrables après un changement de token de paiement. Une collision de version avec des valeurs différentes provoque une erreur.
+`curveVersion` est un SHA-256 tronqué à 16 caractères hexadécimaux des paramètres canoniques, comprenant les octets de l’instruction Meteora et les identités de paiement et de trésorerie. `configVersion` inclut cette version et l’adresse éventuelle de configuration DBC. Les configurations exposées sont mémorisées dans D1 avant réponse. La première configuration DBC canonique enregistrée pour un réseau, un mint et une version est retenue. Une rotation de paiement conserve les anciennes créations et leur configuration de marché propre, afin de permettre leurs échanges avec leur monnaie d’origine.
 
-Variables Cloudflare : `CREATION_ENABLED=true` active le parcours, `SOLANA_RPC_URL` contient éventuellement un RPC serveur privé, `PUBLIC_SOLANA_RPC_URL` un RPC explicitement public pour le navigateur. Le binding D1 `DB` est requis. Aucune URL RPC privée ne figure dans les réponses ni les messages d’erreur. `ASSETS` sert l’interface. Utiliser `nodejs_compat` pour les dépendances Solana.
+Variables : `CREATION_ENABLED=true` active les parcours, `SOLANA_RPC_URL` peut contenir un RPC privé, `PUBLIC_SOLANA_RPC_URL` est explicitement public. Le binding D1 `DB` est obligatoire ; `ASSETS` sert l’interface. La compatibilité `nodejs_compat` est requise. Aucun RPC privé n’est exposé dans les réponses ou erreurs.
 
-## Routes
+## Routes et preuves
 
-- `GET /api/state` retourne `{config,snapshot}` ensemble ; aucune démonstration automatique en cas d’échec. `programId` vaut null, les échanges intégrés sont désactivés et `creationEnabled` reflète l’activation explicite.
+- `GET /api/state` retourne ensemble `{config,snapshot}`, sans démonstration de secours. Sans configuration DBC enregistrée, `dbcConfig` est null et les échanges de la nouvelle courbe sont désactivés.
 - `GET /api/config` et `GET /api/territories` restent disponibles séparément.
-- `POST /api/launches` accepte uniquement `{"signature":"…"}`. Corps JSON borné à 5 Kio et refus des origines de navigateur différentes. Aucune métadonnée envoyée directement par le client n’est enregistrée.
-- `GET /api/health` vérifie le service HTTP, pas la disponibilité de Solana ou D1.
+- `POST /api/curve-config` et `POST /api/launches` acceptent uniquement une signature de transaction ; corps JSON limité à 5 Kio et origine de navigateur identique obligatoire.
+- `GET /api/metadata/:mint` expose le nom et le symbole prouvés par la transaction enregistrée ; avant enregistrement, la route retourne 404.
+- `GET /api/health` identifie le service `meteora-dbc` version 0.3.0 ; ce n’est pas une sonde de disponibilité RPC/D1.
 
-Les lectures sont mises en cache 15 secondes dans le cache local au datacenter Cloudflare. La clé contient la configuration et son activation. Après enregistrement, le cache des territoires est invalidé dans le datacenter courant. Les réponses navigateur portent `no-store`. Aucun proxy RPC arbitraire n’est exposé.
+Les transactions sont relues avec le commitment **finalized**. Une transaction pas encore disponible produit HTTP 409 `TRANSACTION_PENDING`, `Retry-After: 4`. Réessayer sa signature ne nécessite aucune nouvelle transaction ni paiement.
 
-## Vérification des créations
+Pour l’initialisation de configuration, le serveur vérifie le reçu Memo et sa configuration publiée, le signataire, les comptes de l’instruction `createConfig2`, les octets exacts des paramètres canoniques, le propriétaire du compte finalisé et ses paramètres décodés. La politique fixe un milliard de tokens avec six décimales, sans allocation initiale gratuite au créateur, sans vesting, avec autorités supprimées, migration DAMM v2 et liquidité partenaire entièrement verrouillée de façon permanente.
 
-L’API relit la transaction `jsonParsed` avec le commitment **finalized**. Si elle n’est pas encore disponible, elle répond HTTP 409 `TRANSACTION_PENDING` avec `Retry-After: 4`. Le client doit réessayer la même signature, sans payer une nouvelle création.
+Pour un lancement, il vérifie une configuration DBC enregistrée, l’initialisation du pool et un achat dans la même transaction réussie. Les adresses de pool, d’autorité et de vaults sont dérivées ; créateur, mint signataire, programmes SPL, sens d’échange, comptes de paiement et montant positif doivent correspondre. Les soldes finaux prouvent une réception de tokens par le créateur au moins égale au minimum signé et un paiement au vault de quote. L’état finalisé du pool, de sa configuration et du mint est relu. L’offre actuelle peut être inférieure à l’offre initiale après des burns, mais les autorités de mint et de gel doivent être absentes. Le nom et le symbole viennent de l’instruction signée, jamais de champs libres du POST.
 
-La vérification impose :
+Le vérificateur SPL historique conserve ses preuves de création de mint, attribution initiale, révocation, paiement exact et delta de trésorerie, Memo et historique de politique. D1 impose l’unicité des signatures, mints et pools par réseau. Les reçus sont idempotents.
 
-1. Transaction réussie, signature retournée correspondante, créateur payeur et signataire, nouveau mint également signataire.
-2. Création System d’un nouveau compte de mint de 82 octets appartenant au programme SPL classique, dans cette même transaction.
-3. `initializeMint2` avec 6 décimales, autorité initiale du créateur et aucune autorité de gel.
-4. `mintTo` de 1 000 000 000 tokens vers l’ATA du créateur, puis révocation de l’autorité de mint. Le solde initial final de cette transaction confirme cette attribution.
-5. `transferChecked` du montant exact de frais dans la monnaie et vers l’ATA de trésorerie de la configuration publiée. Le delta des soldes de la trésorerie doit confirmer la réception, ce qui rejette un remboursement dissimulé dans la même transaction. Un créateur qui est lui-même la trésorerie réalise un auto-transfert.
-6. Un seul reçu Memo signé par la transaction, avec application, version, configuration, mint, nom et symbole conformes.
-7. État actuel du mint : classique, initialisé, 6 décimales, autorités de mint et de gel absentes, offre au plus égale à l’offre initiale. Des burns postérieurs ne bloquent pas un enregistrement retardé ; l’état initial reste prouvé par la transaction finalisée.
+## Territoires, prix et migration
 
-D1 impose l’unicité du mint et de la signature par réseau. La même signature est idempotente, y compris après rotation du token de paiement. Une désactivation administrative de la création suspend les nouveaux enregistrements ; les reçus peuvent être réessayés après réactivation.
+Le registre contient toutes les générations du réseau courant. Le mint de paiement actuel participe toujours une seule fois à la compétition, même sans création enregistrée. Une rotation retire l’ancien token plateforme s’il n’est pas lui-même une création enregistrée.
 
-## Valorisation des territoires
+Avant migration, le prix d’un token DBC vient du `sqrtPrice` réel du pool, converti selon les décimales puis multiplié par le prix USD de sa monnaie de paiement. Les anciens marchés conservent cette monnaie d’origine. Après migration, le serveur utilise uniquement une cotation externe du token ; il ne conserve pas artificiellement le dernier prix de courbe. `migrationReady` exige un pool non migré, des réserves quote au seuil du protocole et `migrationProgress === 2`. Un marché migré fournit un lien Jupiter construit avec ses deux mints.
 
-Le registre conserve toutes les générations de token de paiement, dans le réseau courant. L’offre actuelle de chaque token créé est relue dans son mint Solana finalisé ; les burns réduisent donc sa valorisation.
+DexScreener est interrogé sur `/tokens/v1/solana/{tokenAddresses}` par groupes de 30. La paire où le mint est `baseToken` avec la plus grande liquidité USD positive fournit le prix. Les capitalisations et FDV externes ne sont pas utilisées. Une cotation absente donne une valorisation nulle ; une panne du fournisseur échoue explicitement.
 
-Les cotations viennent de l’API publique [DexScreener](https://docs.dexscreener.com/api/reference), endpoint `/tokens/v1/solana/{tokenAddresses}`, par groupes de 30 adresses. Le serveur choisit, pour chaque mint, la paire où il est **baseToken**, avec le plus de liquidité USD déclarée. Le prix est en USD. Les champs externes `marketCap` et `fdv` ne sont pas utilisés.
+**Capitalisation affichée = prix spot USD × offre actuelle non brûlée.** L’offre est relue sur Solana, y compris pour le token plateforme Token-2022. Les soldes verrouillés ne sont pas déduits : ce n’est ni une mesure indépendante de l’offre circulante ni une promesse de valeur réalisable à la vente. Tous les territoires partagent le même dénominateur.
 
-**Valorisation affichée = prix USD × offre actuelle non brûlée.** Ce n’est pas une expertise indépendante de l’offre circulante ni une promesse de montant réalisable à la vente. Les tokens verrouillés ou détenus par le créateur ne sont pas déduits. Une cotation absente ou sans liquidité positive donne un prix et une surface nuls ; le token reste dans la liste. Une panne du fournisseur produit une erreur explicite, pas un prix inventé ni un retour à la démonstration. Cette version ne crée pas automatiquement un pool de liquidité.
+## Cache, limites et validation
 
-Limites : 1 000 tokens par réseau avant refus explicite, jamais de troncature silencieuse du dénominateur. Les offres sont lues par groupes de 100 comptes ; chaque groupe a son propre slot avec `minContextSlot` monotone, pas un snapshot global historique atomique. Les cotations externes ont leur propre temporalité. Les petits pools et le prix spot restent manipulables. Avant forte fréquentation, prévoir un indexeur et un cache coordonné, une limitation de débit et la surveillance des RPC/DexScreener.
+Les lectures sont mises en cache pendant 15 secondes au datacenter Cloudflare ; les écritures invalident le cache local et les navigateurs reçoivent `no-store`. Les clés comprennent la configuration et son activation. Aucun proxy RPC arbitraire n’est proposé.
 
-## Validation
+Le registre refuse au-delà de 1 000 créations par réseau, sans troncature du dénominateur. Les comptes sont lus par groupes de 100 avec `minContextSlot` monotone : il ne s’agit pas d’un snapshot historique global atomique. Les cotations externes ont leur propre temporalité et les petits marchés restent manipulables. Un indexeur, un cache coordonné et une limitation de débit seront nécessaires avant forte fréquentation. Meteora et les RPC restent des dépendances externes.
 
-`tests/fixtures/standard-launch.json` provient d’une véritable transaction SDK réussie sur validateur local, finalisée, sans secret. Les tests HTTP utilisent cette structure réelle puis altèrent les preuves pour vérifier les rejets : frais erronés ou remboursés, absence de création du mint, autorités, offre, configuration inconnue, mauvaise origine, attente de finalisation, idempotence et rotation de paiement. Les tests emploient un faux D1 et un faux transport RPC ; ils ne constituent pas un audit externe ni une transaction mainnet de validation.
+Les fixtures `standard-launch.json` et `dbc-launch.json` proviennent de véritables transactions SDK finalisées sur validateur local. Le scénario DBC utilise les binaires des programmes existants et vérifie configuration, lancement avec achat, achats et ventes suivants, et annulation atomique d’une transaction échouée. Les tests HTTP réutilisent ces preuves avec SQLite/D1 et RPC simulés, puis altèrent les conditions pour vérifier les rejets. Les tests de marché couvrent absence de prix, offre réelle, rotation, migration et conservation de la politique historique. Ces vérifications ne constituent ni un audit externe ni une transaction mainnet de validation.
