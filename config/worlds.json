@@ -1,0 +1,29 @@
+{
+  "activeWorldId": "origin",
+  "worlds": [
+    {
+      "id": "origin",
+      "name": "Origin",
+      "theme": "Les premiers territoires",
+      "week": 0,
+      "status": "open",
+      "quoteMint": "31CZR8AgCjGsbkjJGUznY99hiKTQkX6J2zxiwN9Mpump",
+      "createdAt": "2026-11-17T00:00:00Z",
+      "launch": {
+        "initialMarketCapQuote": "10000",
+        "migrationMarketCapQuote": "1000000",
+        "tradingFeeBps": 100
+      }
+    },
+    {
+      "id": "gta6",
+      "name": "GTA 6",
+      "theme": "Vice City",
+      "week": 1,
+      "status": "pending",
+      "quoteMint": null,
+      "createdAt": "2026-11-17T00:00:00Z",
+      "launch": null
+    }
+  ]
+}

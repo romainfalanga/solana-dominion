@@ -2,13 +2,17 @@
 
 Site : https://solana-dominion.romainfalanga83.workers.dev
 
-## Changer le token de plateforme
+## Changer le token mère de gouvernance
 
-Modifier `paymentMint` dans `config/platform.json`, enregistrer sur `main`, attendre les validations et le déploiement Cloudflare. Aucun secret à renseigner. L’API lit les décimales, le symbole et le programme SPL. Les extensions incompatibles sont refusées.
+Modifier uniquement `paymentMint` dans `config/platform.json`, puis valider et publier. Ce champ désigne désormais le token mère de gouvernance. Les scrutins déjà publiés conservent leur mint et leur snapshot d’origine. Ne pas modifier un scrutin existant lors de cette rotation.
 
-La première création avec cette quote initialise sa configuration Meteora DBC puis crée le pool avec l’achat initial. Phantom demande deux signatures ; les créations suivantes réutilisent la configuration. Une nouvelle adresse de token entraîne une nouvelle configuration de courbe, financée en SOL par le premier signataire. Les anciens marchés gardent leurs réserves, leur quote et leurs paramètres ; ils ne sont pas convertis arbitrairement.
+## Ajouter un territoire et sa monnaie
 
-`treasury` reçoit la part partenaire des frais du protocole. Les paramètres `launch` règlent la courbe en unités de quote, pas en dollars. Leur modification crée une nouvelle politique pour les futurs lancements.
+Le catalogue est `config/worlds.json`. Chaque territoire garde son identifiant et son `quoteMint` après son ouverture. Le territoire d’origine utilise donc toujours son token initial, même après changement du token mère. GTA 6 attend son véritable mint : ne pas y substituer une adresse de démonstration.
+
+Créer le memecoin séparément, déterminer ses paramètres de courbe, vérifier la compatibilité SPL et le prix, puis renseigner une nouvelle entrée dans le catalogue. Les paramètres `launch` sont exprimés en unités de ce token local, pas en dollars. Ne pas recopier automatiquement les seuils d’un autre monde. Voir [Territoires et gouvernance](TERRITOIRES-GOUVERNANCE.md).
+
+La première création dans ce territoire initialise sa configuration Meteora DBC puis crée le pool avec l’achat initial. Phantom demande deux signatures ; les créations suivantes réutilisent la configuration. Les anciens marchés conservent réserves, monnaie et paramètres. `treasury` reçoit la part partenaire des frais du protocole.
 
 ## Logo
 
@@ -24,7 +28,7 @@ Les confirmations incertaines conservent leur reçu. Actualiser ou reprendre l�
 
 ## Infrastructure
 
-D1 : migrations `0001_registry.sql` puis `0002_curves.sql`. Elles préservent le registre historique. Build : `npm test && npm run build` ; déploiement : `npm run deploy`, sans option force persistante. Les migrations doivent précéder le code qui utilise les colonnes correspondantes.
+D1 : appliquer les migrations numérotées du dossier `migrations/` dans l’ordre, avant le déploiement du code correspondant. Elles préservent le registre historique. Build : `npm test && npm run build` ; déploiement : `npm run deploy`, sans option force persistante. Les migrations doivent précéder le code qui utilise les colonnes correspondantes.
 
 RPC public : quotas et disponibilité externes ; une indisponibilité doit produire un état explicite, jamais une carte fictive. Pour une charge importante, renseigner un RPC adapté via les variables Cloudflare prévues.
 

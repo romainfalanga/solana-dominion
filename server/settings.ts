@@ -2,21 +2,23 @@ import { Buffer } from 'buffer';
 import { PublicKey } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID,TOKEN_2022_PROGRAM_ID,unpackMint } from '@solana/spl-token';
 import source from '../config/platform.json';
+import {worldPolicy} from './worlds';
 import { assertCompatibleQuoteMint } from '../src/lib/quoteMint';
 import { DBC_PROGRAM_ID,encodeDominionConfigInstruction,decodeDbcConfig,assertDominionDbcConfig } from '../src/lib/dbc';
 import type { PlatformConfig } from '../src/types';
 import { PublicError,database,type Env,type RpcAccount,type RpcContext,type SavedConfiguration,type SavedCurve } from './types';
 import { accountInfo,checkedUrl,rpc } from './rpc';
 const GENESIS = {devnet:'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG','mainnet-beta':'5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d'};
-export function settings(env: Env) {
+export function settings(env: Env,worldId?:string) {
+  const world=worldId===undefined?undefined:worldPolicy(worldId);
   if (source.cluster !== 'devnet' && source.cluster !== 'mainnet-beta') throw new PublicError('Réseau de plateforme non valide.');
   let paymentMint: PublicKey,treasury: PublicKey;
-  try {paymentMint = new PublicKey(source.paymentMint);treasury = new PublicKey(source.treasury);} catch {throw new PublicError('Mint de paiement ou trésorerie non valide.');}
+  try {paymentMint = new PublicKey(world?.quoteMint??source.paymentMint);treasury = new PublicKey(source.treasury);} catch {throw new PublicError('Mint de paiement ou trésorerie non valide.');}
   if (!PublicKey.isOnCurve(treasury.toBytes())) throw new PublicError('La trésorerie doit être un wallet Solana.');
   const cluster: 'devnet'|'mainnet-beta' = source.cluster;
   const publicRpc = checkedUrl(env.PUBLIC_SOLANA_RPC_URL || `https://api.${cluster}.solana.com`);
   const privateRpc = checkedUrl(env.SOLANA_RPC_URL || publicRpc);
-  return {cluster,paymentMint:paymentMint.toBase58(),treasury:treasury.toBase58(),launch:source.launch,publicRpc,privateRpc};
+  return {cluster,paymentMint:paymentMint.toBase58(),treasury:treasury.toBase58(),launch:world?.launch??source.launch,publicRpc,privateRpc,world};
 }
 export async function verifyNetwork(env: Env): Promise<void> {
   const cfg = settings(env);
@@ -32,8 +34,8 @@ async function hashVersion(value: unknown): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(value)));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2,'0')).join('').slice(0,16);
 }
-export async function resolveConfig(env: Env): Promise<PlatformConfig> {
-  const cfg = settings(env);
+export async function resolveConfig(env: Env,worldId = 'origin'): Promise<PlatformConfig> {
+  const cfg = settings(env,worldId);
   const [raw,parsed] = await Promise.all([
     rpc<RpcContext<RpcAccount | null>>(cfg.privateRpc,'getAccountInfo',[cfg.paymentMint,{encoding:'base64',commitment:'finalized'}]),
     rpc<RpcContext<ParsedMint | null>>(cfg.privateRpc,'getAccountInfo',[cfg.paymentMint,{encoding:'jsonParsed',commitment:'finalized'}]).catch(() => null),
@@ -45,8 +47,8 @@ export async function resolveConfig(env: Env): Promise<PlatformConfig> {
   try {assertCompatibleQuoteMint(mint,info.owner);} catch (error) {throw new PublicError(error instanceof Error ? error.message : 'Mint de paiement incompatible.');}
   const quoteSymbol = quoteSymbolFromParsed(parsed,cfg.paymentMint);
   const config: PlatformConfig = {mode:cfg.cluster,quoteMint:cfg.paymentMint,quoteSymbol,quoteDecimals:mint.decimals,quoteTokenProgram:info.owner.toBase58(),
-    programId:null,rpcUrl:cfg.publicRpc,tradingEnabled:false,worldName:'Les territoires Solana',creationFeeAtomic:'0',
-    treasury:cfg.treasury,configVersion:'',creationEnabled:env.CREATION_ENABLED === 'true' && Boolean(env.DB),launchModel:'dbc',dbcConfig:null,curve:source.launch};
+    programId:null,rpcUrl:cfg.publicRpc,tradingEnabled:false,worldName:cfg.world?.name??'Les territoires Solana',worldId,creationFeeAtomic:'0',
+    treasury:cfg.treasury,configVersion:'',creationEnabled:env.CREATION_ENABLED === 'true' && Boolean(env.DB),launchModel:'dbc',dbcConfig:null,curve:cfg.launch};
   const encoded = encodeDominionConfigInstruction(config);
   config.curveVersion = await hashVersion({model:'dominion-dbc-v1',quoteMint:config.quoteMint,quoteTokenProgram:config.quoteTokenProgram,quoteDecimals:config.quoteDecimals,treasury:config.treasury,parameters:Buffer.from(encoded).toString('base64')});
   const stored = await database(env).prepare('SELECT * FROM curve_configs WHERE cluster = ? AND payment_mint = ? AND curve_version = ?').bind(cfg.cluster,cfg.paymentMint,config.curveVersion).first<SavedCurve>();

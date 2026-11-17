@@ -1,3 +1,5 @@
+> Ce document décrit la première architecture à quote unique. L’évolution multiterritoire et gouvernance est décrite dans [TERRITOIRES-GOUVERNANCE.md](TERRITOIRES-GOUVERNANCE.md).
+
 # Architecture active : courbes Meteora DBC
 
 ## Objectifs et découpage

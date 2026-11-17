@@ -6,10 +6,17 @@ import worker,{resolveConfig,readSnapshot,type Env} from '../server';
 import { recordConfiguration } from '../server/settings';
 import type { D1Database,D1Statement,D1Result,ParsedTransaction,RegisteredLaunch,SavedConfiguration } from '../server/types';
 
+vi.mock('../config/worlds.json',async(importOriginal)=>{
+  const original=await importOriginal<{default:typeof import('../config/worlds.json')}>();
+  const fixture=(await import('./fixtures/standard-launch.json')).default;
+  return {default:{...original.default,worlds:[...original.default.worlds,{id:'fixture',name:'Historical fixture',theme:'Test',week:99,status:'open',quoteMint:fixture.config.quoteMint,createdAt:'2026-11-16T00:00:00Z',launch:{initialMarketCapQuote:'10000',migrationMarketCapQuote:'1000000',tradingFeeBps:100}}]}};
+});
+
 const GENESIS = '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d';
 const legacy: SavedConfiguration = {version:fixture.config.configVersion,cluster:'mainnet-beta',payment_mint:fixture.config.quoteMint,payment_program:fixture.config.quoteTokenProgram,fee_atomic:fixture.config.creationFeeAtomic,treasury:fixture.config.treasury,quote_decimals:fixture.config.quoteDecimals};
 const launchRow: RegisteredLaunch = {cluster:'mainnet-beta',mint:fixture.mint,signature:fixture.signature,creator:fixture.payer,name:'Waves',symbol:'WAVE',payment_mint:legacy.payment_mint,payment_program:legacy.payment_program,fee_atomic:legacy.fee_atomic,treasury:legacy.treasury,config_version:legacy.version,created_at:fixture.parsedTransaction.blockTime!,slot:fixture.parsedTransaction.slot};
 class TestDB implements D1Database {
+  worlds = new Map<string,{cluster:string;id:string;quote_mint:string;week:number;created_at:string}>();
   configurations = new Map<string,SavedConfiguration>();launches = new Map<string,RegisteredLaunch>();forcedRows?:RegisteredLaunch[];
   prepare(sql: string): D1Statement {return new TestStatement(this,sql);}
 }
@@ -22,9 +29,10 @@ class TestStatement implements D1Statement {
     if (row && this.sql.includes('FROM configurations') && row.cluster !== v[1]) return null;
     return row ? structuredClone(row) as T : null;
   }
-  async all<T>(): Promise<D1Result<T>> {return {success:true,results:(this.db.forcedRows ?? [...this.db.launches.values()].filter(row => row.cluster === this.values[0])).map(row => structuredClone(row)) as T[]};}
+  async all<T>(): Promise<D1Result<T>> {if(this.sql.includes('FROM world_registry'))return {success:true,results:[...this.db.worlds.values()] as T[]};return {success:true,results:(this.db.forcedRows ?? [...this.db.launches.values()].filter(row => row.cluster === this.values[0])).map(row => structuredClone(row)) as T[]};}
   async run(): Promise<D1Result> {
     const v = this.values;
+    if(this.sql.startsWith('INSERT INTO world_registry')){this.db.worlds.set(String(v[1]),{cluster:String(v[0]),id:String(v[1]),quote_mint:String(v[2]),week:Number(v[3]),created_at:String(v[4])});return {success:true,meta:{changes:1}};}
     if (this.sql.startsWith('INSERT INTO configurations')) {
       const version = String(v[0]);if (this.db.configurations.has(version)) return {success:true,meta:{changes:0}};
       this.db.configurations.set(version,{version,cluster:v[1] as 'mainnet-beta',payment_mint:String(v[2]),payment_program:String(v[3]),fee_atomic:String(v[4]),treasury:String(v[5]),quote_decimals:Number(v[6]),launch_model:v[7] as 'standard'|'dbc',curve_version:v[8] as string|null,dbc_config:v[9] as string|null,curve_json:v[10] as string|null});
@@ -44,6 +52,7 @@ function editInfo(type: string): Record<string,unknown> {
 }
 function setSupply(amount: bigint) {const data = Buffer.from(mintAccount.data[0],'base64');data.writeBigUInt64LE(amount,36);mintAccount.data[0] = data.toString('base64');}
 function request(path: string,method = 'GET',body?:unknown,headers: Record<string,string> = {}) {
+  if(path==='/api/launches')path+='?world=fixture';
   return worker.fetch(new Request(`https://dominion.example${path}`,{method,headers:body === undefined ? headers : {'Content-Type':'application/json',...headers},...(body === undefined ? {} : {body:JSON.stringify(body)})}),env,ctx);
 }
 const register = () => request('/api/launches','POST',{signature:fixture.signature});
@@ -146,22 +155,37 @@ describe('signature-only receipt endpoint',() => {
 });
 
 describe('real token territories in USD',() => {
-  it('keeps all payment-token generations and uses current supply with the most liquid base-token quote',async () => {
+  it('isolates each world while preserving historical portfolios and current supply pricing',async () => {
     db.launches.set(launchRow.mint,launchRow);setSupply(900_000_000_000_000n);
     dexPairs = [{chainId:'solana',baseToken:{address:fixture.mint},priceUsd:'0.01',liquidity:{usd:100},marketCap:999999},
       {chainId:'solana',baseToken:{address:fixture.mint},priceUsd:'0.02',liquidity:{usd:1000},priceChange:{h24:3}},
       {chainId:'solana',baseToken:{address:'other'},quoteToken:{address:fixture.mint},priceUsd:'9999',liquidity:{usd:1000000}}];
-    const snapshot = await readSnapshot(env,await resolveConfig(env));expect(snapshot.tokens).toHaveLength(2);
+    const origin=await resolveConfig(env);expect((await readSnapshot(env,origin)).tokens.map(token=>token.mint)).toEqual([origin.quoteMint]);
+    const snapshot = await readSnapshot(env,await resolveConfig(env,'fixture'));expect(snapshot.tokens).toHaveLength(2);
+    const portfolio=await readSnapshot(env,origin,[launchRow]);expect(portfolio.tokens.some(token=>token.mint===fixture.mint)).toBe(true);
     expect(snapshot.tokens[0]).toMatchObject({price:0.02,marketCap:18_000_000,change24h:3,baseReserve:'0',quoteReserve:'0',pool:'',supply:'900000000000000'});expect(snapshot.currency).toBe('USD');
   });
   it('retains unpriced tokens at zero territory and never invents a valuation',async () => {
-    db.launches.set(launchRow.mint,launchRow);const snapshot = await readSnapshot(env,await resolveConfig(env));expect(snapshot.tokens[0]).toMatchObject({price:0,marketCap:0,change24h:null});
+    db.launches.set(launchRow.mint,launchRow);const snapshot = await readSnapshot(env,await resolveConfig(env,'fixture'));expect(snapshot.tokens[0]).toMatchObject({price:0,marketCap:0,change24h:null});
   });
   it('rejects an oversized registry instead of silently truncating the denominator',async () => {
-    db.forcedRows = Array.from({length:1001},() => launchRow);await expect(readSnapshot(env,await resolveConfig(env))).rejects.toThrow('capacité');
+    db.forcedRows = Array.from({length:1001},() => launchRow);await expect(readSnapshot(env,await resolveConfig(env,'fixture'))).rejects.toThrow('capacité');
   });
   it('adds security headers and does not expose an arbitrary RPC relay',async () => {
     const response = await request('/api/health');expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");expect(response.headers.get('cache-control')).toBe('no-store');
     expect((await request('/api/rpc')).status).toBe(404);expect((await request('/api/state','POST',{})).status).toBe(405);
   });
+});
+
+describe('explicit immutable world routing',()=>{
+ it('rejects a valid receipt submitted to another world even after its first registration',async()=>{
+  const wrong=()=>request('/api/launches?world=origin','POST',{signature:fixture.signature});
+  expect((await wrong()).status).toBe(409);expect(db.launches.size).toBe(0);expect((await register()).status).toBe(201);
+  const repeated=await wrong();expect(repeated.status).toBe(409);expect((await repeated.json()).code).toBe('WORLD_MISMATCH');
+ });
+ it('keeps origin configVersion identical to the pre-world hash payload',async()=>{
+  const c=await resolveConfig(env);const previous={cluster:c.mode,paymentMint:c.quoteMint,treasury:c.treasury,creationFeeAtomic:'0',quoteTokenProgram:c.quoteTokenProgram,launchModel:'dbc',curveVersion:c.curveVersion,dbcConfig:c.dbcConfig};
+  const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(previous))))].map(byte=>byte.toString(16).padStart(2,'0')).join('').slice(0,16);
+  expect(c.worldId).toBe('origin');expect(c.configVersion).toBe(hash);
+ });
 });

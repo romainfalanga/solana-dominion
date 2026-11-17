@@ -8,6 +8,7 @@ import { assertCompatibleQuoteMint } from '../src/lib/quoteMint';
 import { PublicError,database,type Env,type RegisteredLaunch,type RpcAccount,type RpcContext,type SavedCurve } from './types';
 import { accountInfo,boundedJson,rpc } from './rpc';
 import { settings } from './settings';
+import {worldPolicy,worldIdForQuote} from './worlds';
 import {pumpQuotePrices,WRAPPED_SOL} from './pump';
 const COLORS = ['#60c2b1','#ad93e8','#ee9879','#7eb6df','#d9ba68','#d98eb7','#93bf78','#83a0e3'];
 interface DexPair { chainId?:string;pairAddress?:string;baseToken?:{address?:string;name?:unknown;symbol?:unknown};quoteToken?:{address?:string};priceUsd?:string;liquidity?:{usd?:number};priceChange?:{h24?:number} }
@@ -45,9 +46,25 @@ export async function prices(mints: string[]): Promise<Map<string,MarketQuote>> 
   }
   return selected;
 }
-export async function readSnapshot(env: Env,config: PlatformConfig,registeredRows?:RegisteredLaunch[]): Promise<Snapshot> {
-  const cfg = settings(env),db = database(env);
-  const rows = registeredRows ? {success:true,results:registeredRows} : await db.prepare('SELECT * FROM launches WHERE cluster = ? ORDER BY created_at DESC,mint LIMIT 1001').bind(cfg.cluster).all<RegisteredLaunch>();
+export interface QuoteDependencyContext {path:string[];prices:Map<string,number>}
+/** Resolve registered quote assets without adding their tokens to the displayed map. */
+export async function resolveQuoteDependencies(mints:string[],load:(mint:string)=>Promise<RegisteredLaunch|null>,read:(row:RegisteredLaunch,context:QuoteDependencyContext)=>Promise<number|null>,context:QuoteDependencyContext={path:[],prices:new Map()}):Promise<Map<string,number>>{
+ const result=new Map<string,number>();
+ for(const mint of [...new Set(mints)]){
+  if(context.path.includes(mint))throw new PublicError('Cycle dans les monnaies des territoires.',503,'QUOTE_DEPENDENCY_CYCLE');
+  const cached=context.prices.get(mint);if(cached!==undefined){result.set(mint,cached);continue;}
+  const row=await load(mint);if(!row||row.model!=='dbc')continue;
+  if(row.mint!==mint)throw new PublicError('Dépendance de monnaie incohérente.');
+  if(context.path.length>=4)throw new PublicError('La profondeur des monnaies dépasse quatre niveaux.',503,'QUOTE_DEPENDENCY_DEPTH');
+  const price=await read(row,{path:[...context.path,mint],prices:context.prices});
+  if(price!==null){if(!Number.isFinite(price)||price<=0)throw new PublicError('Prix de dépendance non valide.');context.prices.set(mint,price);result.set(mint,price);}
+ }
+ return result;
+}
+export async function readSnapshot(env: Env,config: PlatformConfig,registeredRows?:RegisteredLaunch[],dependencyContext:QuoteDependencyContext={path:[],prices:new Map()}): Promise<Snapshot> {
+  const cfg = settings(env,config.worldId),db = database(env);
+  if(config.worldId&&worldPolicy(config.worldId).quoteMint!==config.quoteMint)throw new PublicError('La configuration ne correspond pas au monde sélectionné.',409,'WORLD_MISMATCH');
+  const rows = registeredRows ? {success:true,results:registeredRows} : config.worldId ? await db.prepare('SELECT * FROM launches WHERE cluster = ? AND payment_mint = ? ORDER BY created_at DESC,mint LIMIT 1001').bind(cfg.cluster,config.quoteMint!).all<RegisteredLaunch>() : await db.prepare('SELECT * FROM launches WHERE cluster = ? ORDER BY created_at DESC,mint LIMIT 1001').bind(cfg.cluster).all<RegisteredLaunch>();
   if (!rows.success || !rows.results) throw new PublicError('Le registre de tokens est indisponible.');
   if (rows.results.length > 1000) throw new PublicError('Le registre dépasse la capacité de cette version. Aucun territoire partiel n’est affiché.');
   let platformMint: PublicKey,platformProgram: PublicKey;
@@ -56,7 +73,7 @@ export async function readSnapshot(env: Env,config: PlatformConfig,registeredRow
   if (!platformProgram.equals(TOKEN_PROGRAM_ID) && !platformProgram.equals(TOKEN_2022_PROGRAM_ID)) throw new PublicError('Programme du token de plateforme non pris en charge.');
   type Definition = {mint:string;name:string;symbol:string;creator:string;createdAt:number;isPlatform:boolean;row?:RegisteredLaunch};
   const definitions = new Map<string,Definition>();
-  for (const row of rows.results) definitions.set(row.mint,{mint:row.mint,name:row.name,symbol:row.symbol,creator:row.creator,createdAt:row.created_at,isPlatform:false,row});
+  for (const row of rows.results.filter(row=>registeredRows!==undefined||!config.worldId||row.payment_mint===config.quoteMint)) definitions.set(row.mint,{mint:row.mint,name:row.name,symbol:row.symbol,creator:row.creator,createdAt:row.created_at,isPlatform:false,row});
   const platformAddress = platformMint.toBase58(),registeredPlatform = definitions.get(platformAddress);
   definitions.set(platformAddress,{mint:platformAddress,name:config.quoteSymbol,symbol:config.quoteSymbol,
     creator:registeredPlatform?.creator ?? '',createdAt:registeredPlatform?.createdAt ?? 0,isPlatform:true,row:registeredPlatform?.row});
@@ -121,7 +138,7 @@ export async function readSnapshot(env: Env,config: PlatformConfig,registeredRow
         if (token.migrated) token.marketUrl = `https://jup.ag/swap/${curve.quoteMint.toBase58()}-${launch.mint}`;
         token.migrationReady = !token.migrated && state.quoteReserve.gte(curve.migrationQuoteThreshold) && state.migrationProgress === 2;
         // Each historical market keeps its own settlement asset and canonical curve.
-        token.marketConfig = {...policy,rpcUrl:config.rpcUrl,dbcConfig:row.curve_config!,creationEnabled:config.creationEnabled,tradingEnabled:env.CREATION_ENABLED === 'true' && Boolean(env.DB)};
+        token.marketConfig = {...policy,worldId:worldIdForQuote(policy.quoteMint!),rpcUrl:config.rpcUrl,dbcConfig:row.curve_config!,creationEnabled:config.creationEnabled,tradingEnabled:env.CREATION_ENABLED === 'true' && Boolean(env.DB)};
         if (!token.migrated) {
           const price = getPriceFromSqrtPrice(state.sqrtPrice,mint.decimals as TokenDecimal,policy.quoteDecimals).toNumber();
           if (!Number.isFinite(price) || price <= 0) throw new PublicError('Prix de courbe non valide.');
@@ -142,6 +159,21 @@ export async function readSnapshot(env: Env,config: PlatformConfig,registeredRow
       const sol=(quotes.get(WRAPPED_SOL)??(await prices([WRAPPED_SOL])).get(WRAPPED_SOL));
       if(sol)for(const [mint,price] of native)quotes.set(mint,{price:price*sol.price,change:null});
     }
+  }
+  if(cfg.cluster==='mainnet-beta'){
+    const missing=[...new Set([platformAddress,...[...curvePrices.values()].map(curve=>curve.quoteMint)])].filter(mint=>!quotes.has(mint));
+    const resolved=await resolveQuoteDependencies(missing,
+      mint=>db.prepare('SELECT * FROM launches WHERE cluster = ? AND mint = ?').bind(cfg.cluster,mint).first<RegisteredLaunch>(),
+      async(row,context)=>{
+        if(!row.curve_config)throw new PublicError('Politique de dépendance absente.');
+        const saved=await db.prepare('SELECT * FROM curve_configs WHERE cluster = ? AND config_address = ?').bind(cfg.cluster,row.curve_config).first<SavedCurve>();
+        if(!saved||saved.payment_mint!==row.payment_mint)throw new PublicError('Politique de dépendance incohérente.');
+        const policy=curvePolicy(saved);
+        const snapshot=await readSnapshot(env,{...policy,worldId:undefined,rpcUrl:config.rpcUrl},[row],context);
+        const price=snapshot.tokens.find(token=>token.mint===row.mint)?.price;
+        return price&&price>0?price:null;
+      },dependencyContext);
+    for(const [mint,price] of resolved)quotes.set(mint,{price,change:null});
   }
   for (const token of tokens) {
     const curve = curvePrices.get(token.mint),quote = curve ? quotes.get(curve.quoteMint) : quotes.get(token.mint);

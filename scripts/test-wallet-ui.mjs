@@ -8,7 +8,8 @@ const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||u
 try {
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(({A})=>{const listeners={};const key=a=>({toBase58:()=>a});window.__changeWallet=a=>{window.phantom.solana.publicKey=key(a);for(const fn of listeners.accountChanged??[])fn(key(a));};window.phantom={solana:{isPhantom:true,publicKey:key(A),connect:async()=>({publicKey:key(A)}),disconnect:async()=>{for(const fn of listeners.disconnect??[])fn();},on:(event,fn)=>(listeners[event]??=[]).push(fn),removeListener:(event,fn)=>{listeners[event]=(listeners[event]??[]).filter(f=>f!==fn);}}};},{A});
- await page.route('**/api/state',r=>r.fulfill({status:503,json:{error:'World unavailable for this isolated wallet test'}}));
+ await page.route('**/api/worlds',r=>r.fulfill({json:{worlds:[{id:'origin',name:'Origin',theme:'Origin',week:0,status:'open',quoteMint:'So11111111111111111111111111111111111111112',createdAt:'2026-11-01T00:00:00Z'}],activeWorldId:'origin',governanceMint:'So11111111111111111111111111111111111111112'}}));
+await page.route('**/api/state',r=>r.fulfill({status:503,json:{error:'World unavailable for this isolated wallet test'}}));
  let delayA=false,mode='normal',reads=0;
  await page.route('**/api/wallet?*',async r=>{reads++;const owner=new URL(r.request().url()).searchParams.get('owner');if(owner===A&&delayA)await new Promise(resolve=>setTimeout(resolve,800));try{if(mode==='error')await r.fulfill({status:503,json:{error:'RPC indisponible pour le test'}});else await r.fulfill({json:snapshot(owner,mode==='empty'?[]:mode==='unknown'?[aAssets[2]]:owner===A?aAssets:[asset('second-token','SECOND','5',10,50,'#d9ba68')])});}catch{/* Owner-switch aborts an obsolete request. */}});
  await page.goto(process.env.DOMINION_URL||'http://127.0.0.1:4173');await page.getByRole('button',{name:'Wallet',exact:true}).click();

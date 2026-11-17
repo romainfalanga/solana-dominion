@@ -1,3 +1,5 @@
+> Suivi de la première version. Pour le chantier multiterritoire et gouvernance, voir [TERRITOIRES-GOUVERNANCE.md](TERRITOIRES-GOUVERNANCE.md).
+
 # Évolution demandée le 17 novembre 2026
 
 | ID | Résultat attendu | Responsable | État |

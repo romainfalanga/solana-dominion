@@ -2,17 +2,19 @@
 
 Launchpad et carte de compétition sur Solana : https://solana-dominion.romainfalanga83.workers.dev
 
-## Token de plateforme
+## Token mère, territoires et gouvernance
 
-Modifier uniquement `paymentMint` dans [`config/platform.json`](config/platform.json), puis enregistrer sur `main`. GitHub teste et Cloudflare déploie. Le mint, le symbole, les décimales et le programme SPL sont vérifiés sur Solana. Le token de plateforme rejoint automatiquement la compétition, avec sa capitalisation réelle.
+Le token mère permet de voter pour les thèmes hebdomadaires. Son adresse reste dans `paymentMint`, dans [`config/platform.json`](config/platform.json). La remplacer ne modifie pas les monnaies des territoires existants ni les snapshots historiques.
 
-Les anciens marchés conservent leur quote et leur politique d’origine : changer le token de plateforme ne convertit pas les réserves existantes et ne bloque pas leurs ventes.
+Chaque territoire permanent possède un memecoin propre, configuré dans [`config/worlds.json`](config/worlds.json). Il sert de quote pour les créations et échanges locaux et participe à sa carte. Les anciens territoires restent ouverts. GTA 6 attend son mint officiel ; aucun token fictif n’est activé.
+
+Les votes pondérés sont signés avec Phantom à partir d’un snapshot publié. Ils n’exécutent aucune transaction et ne créent aucun memecoin automatiquement. Voir le [fonctionnement et les limites](docs/TERRITOIRES-GOUVERNANCE.md).
 
 ## Lancement et échanges
 
-Le programme existant **Meteora Dynamic Bonding Curve** crée le token et son marché contre le token de plateforme. Le créateur choisit un achat initial ; il reçoit la quantité achetée, jamais toute la supply par défaut. La supply initiale est de 1 milliard, avec 6 décimales, sans autorité de mint supplémentaire ni de gel.
+Le programme existant **Meteora Dynamic Bonding Curve** crée le token et son marché contre le token du territoire sélectionné. Le créateur choisit un achat initial ; il reçoit la quantité achetée, jamais toute la supply par défaut. La supply initiale est de 1 milliard, avec 6 décimales, sans autorité de mint supplémentaire ni de gel.
 
-Paramètres de départ : capitalisation initiale de 10 000 unités de quote, seuil de capitalisation de migration de 1 000 000 unités de quote, frais de swap constants de 1 %. Ces paramètres sont dans `launch` ; ils définissent une courbe, pas une garantie de prix ou une parité. Aucun forfait de création en quote n’est ajouté. Les frais de protocole sont inclus dans le devis. Les comptes, les frais Metaplex et les transactions nécessitent du SOL du signataire.
+Paramètres de départ : capitalisation initiale de 10 000 unités de quote, seuil de capitalisation de migration de 1 000 000 unités de quote, frais de swap constants de 1 %. Ces paramètres sont propres à chaque territoire dans `config/worlds.json` (`launch`) ; ils définissent une courbe, pas une garantie de prix ou une parité. Aucun forfait de création en quote n’est ajouté. Les frais de protocole sont inclus dans le devis. Les comptes, les frais Metaplex et les transactions nécessitent du SOL du signataire.
 
 La première utilisation d’une quote/politique crée une configuration partagée puis un pool avec achat initial : deux signatures Phantom. Les lancements suivants réutilisent la configuration : une signature. Le solde quote et un budget SOL conservateur sont vérifiés avant la première signature. Les reçus de confirmation incertaine sont conservés avant diffusion ; une reprise ne doit pas repayer la configuration.
 
@@ -20,7 +22,7 @@ Achats et ventes intégrés avant migration, minimum reçu fixé depuis le devis
 
 ## Carte
 
-La surface représente `market cap du token / somme des market caps`. Pour une courbe active : prix du token en quote × cours USD de la quote × offre actuelle. Le token de plateforme et les marchés migrés utilisent un cours externe avec liquidité. Absence de valorisation vérifiable : zéro surface, présence maintenue dans la liste. Une recherche ne change pas le dénominateur.
+Chaque carte répartit sa surface selon `market cap du token / somme des market caps de ce territoire`. Pour une courbe active : prix du token en quote × cours USD de la quote × offre actuelle. Le token du territoire et les marchés migrés utilisent un cours externe avec liquidité. Absence de valorisation vérifiable : zéro surface, présence maintenue dans la liste. Une recherche ne change pas le dénominateur.
 
 ## Identité
 

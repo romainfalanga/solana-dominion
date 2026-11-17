@@ -8,6 +8,7 @@ import type { PlatformConfig } from '../src/types';
 import { PublicError,database,type Env,type ParsedInstruction,type ParsedTransaction,type RegisteredLaunch,type RpcAccount,type RpcContext,type SavedConfiguration,type SavedCurve,type TokenBalance } from './types';
 import { accountInfo,rpc } from './rpc';
 import { settings,verifyNetwork,quoteSymbolFromParsed,type ParsedMint } from './settings';
+import {assertWorldPayment,worldIdForQuote} from './worlds';
 const MEMO = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
 const normalized = (name: string) => name.replaceAll('_','').toLowerCase();
 function invalid(message: string): never {throw new PublicError(message,422,'INVALID_CURVE');}
@@ -33,17 +34,17 @@ function successful(tx: ParsedTransaction,signature: string): string {
 export function restorePolicy(row: SavedConfiguration,env: Env): PlatformConfig {
   if (row.launch_model !== 'dbc' || !row.curve_version || !row.curve_json) invalid('Configuration historique de courbe absente.');
   let curve: PlatformConfig['curve'];try {curve = JSON.parse(row.curve_json) as PlatformConfig['curve'];} catch {return invalid('Politique de courbe historique non valide.');}
-  return {mode:row.cluster,quoteMint:row.payment_mint,quoteSymbol:row.payment_mint.slice(0,6),quoteDecimals:row.quote_decimals,quoteTokenProgram:row.payment_program,programId:null,rpcUrl:settings(env).publicRpc,tradingEnabled:false,worldName:'Solana',creationFeeAtomic:row.fee_atomic,treasury:row.treasury,configVersion:row.version,creationEnabled:true,launchModel:'dbc',curveVersion:row.curve_version,dbcConfig:row.dbc_config ?? null,curve};
+  return {mode:row.cluster,quoteMint:row.payment_mint,quoteSymbol:row.payment_mint.slice(0,6),quoteDecimals:row.quote_decimals,quoteTokenProgram:row.payment_program,programId:null,rpcUrl:settings(env).publicRpc,tradingEnabled:false,worldName:'Solana',worldId:worldIdForQuote(row.payment_mint),creationFeeAtomic:row.fee_atomic,treasury:row.treasury,configVersion:row.version,creationEnabled:true,launchModel:'dbc',curveVersion:row.curve_version,dbcConfig:row.dbc_config ?? null,curve};
 }
 export function curvePolicy(row: SavedCurve): PlatformConfig {
   let policy: PlatformConfig;try {policy = JSON.parse(row.policy_json) as PlatformConfig;} catch {return invalid('Politique de courbe sauvegardée non valide.');}
   if (policy.quoteMint !== row.payment_mint || policy.curveVersion !== row.curve_version || policy.mode !== row.cluster) invalid('Historique de courbe incohérent.');
   return {...policy,dbcConfig:row.config_address};
 }
-export async function registerCurveConfig(env: Env,signature: string): Promise<{created:boolean;curve:SavedCurve}> {
-  const cfg = settings(env),db = database(env);
+export async function registerCurveConfig(env: Env,signature: string,worldId?:string): Promise<{created:boolean;curve:SavedCurve}> {
+  const cfg = settings(env,worldId),db = database(env);
   const existing = await db.prepare('SELECT * FROM curve_configs WHERE cluster = ? AND signature = ?').bind(cfg.cluster,signature).first<SavedCurve>();
-  if (existing) return {created:false,curve:existing};
+  if (existing) {if(worldId)assertWorldPayment(worldId,existing.payment_mint);return {created:false,curve:existing};}
   if (env.CREATION_ENABLED !== 'true') throw new PublicError('La configuration de nouveaux marchés est désactivée.',503,'CREATION_DISABLED');
   await verifyNetwork(env);
   const tx = await rpc<ParsedTransaction | null>(cfg.privateRpc,'getTransaction',[signature,{encoding:'jsonParsed',commitment:'finalized',maxSupportedTransactionVersion:0}]);
@@ -57,6 +58,7 @@ export async function registerCurveConfig(env: Env,signature: string): Promise<{
   if (Object.keys(memo).sort().join(',') !== 'app,config,configVersion,curveVersion,version' || memo.version !== 1 || typeof memo.configVersion !== 'string' || typeof memo.curveVersion !== 'string' || typeof memo.config !== 'string') invalid('Le reçu de configuration est non valide.');
   const saved = await db.prepare('SELECT * FROM configurations WHERE version = ? AND cluster = ?').bind(memo.configVersion,cfg.cluster).first<SavedConfiguration>();
   if (!saved || saved.curve_version !== memo.curveVersion) invalid('Cette politique de courbe n’a pas été publiée par la plateforme.');
+  if(worldId)assertWorldPayment(worldId,saved.payment_mint);
   const policy = restorePolicy(saved,env),creates = dbcInstructions(tx).filter(ix => ix.name === 'createconfig2');
   if (creates.length !== 1) invalid('Une unique création de configuration Meteora est requise.');
   const create = creates[0],a = create.accounts;
@@ -86,13 +88,14 @@ function balance(tx: ParsedTransaction,values: TokenBalance[] | undefined,addres
   const row = rows[0];if (index < 0 || rows.length !== 1 || row.mint !== mint || row.owner !== owner || row.programId !== program || !/^\d+$/.test(row.uiTokenAmount.amount)) return invalid('Les soldes de l’achat initial ne correspondent pas au marché.');
   return BigInt(row.uiTokenAmount.amount);
 }
-export async function registerDbcLaunch(env: Env,signature: string,tx: ParsedTransaction): Promise<{created:boolean;launch:RegisteredLaunch}> {
-  const cfg = settings(env),db = database(env),payer = successful(tx,signature),instructions = dbcInstructions(tx);
+export async function registerDbcLaunch(env: Env,signature: string,tx: ParsedTransaction,worldId?:string): Promise<{created:boolean;launch:RegisteredLaunch}> {
+  const cfg = settings(env,worldId),db = database(env),payer = successful(tx,signature),instructions = dbcInstructions(tx);
   const creates = instructions.filter(ix => ix.name === 'initializevirtualpoolwithspltoken' || ix.name === 'initializevirtualpoolwithtoken2022');
   if (creates.length !== 1) invalid('Une seule création de marché Meteora est requise.');
   const create = creates[0],a = create.accounts;
   const shared = await db.prepare('SELECT * FROM curve_configs WHERE cluster = ? AND config_address = ?').bind(cfg.cluster,a.config).first<SavedCurve>();
   if (!shared) invalid('Le marché utilise une configuration de courbe non enregistrée.');
+  if(worldId)assertWorldPayment(worldId,shared.payment_mint);
   const policy = curvePolicy(shared),configAddress = new PublicKey(shared.config_address),quoteMint = new PublicKey(shared.payment_mint),mint = new PublicKey(a.base_mint),poolAddress = new PublicKey(a.pool);
   const expectedPool = deriveDbcPoolAddress(quoteMint,mint,configAddress),authority = deriveDbcPoolAuthority();
   const baseProgram = create.name === 'initializevirtualpoolwithtoken2022' ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;

@@ -31,11 +31,15 @@ function mintAccount(supply: bigint,decimals = 6,program = TOKEN_PROGRAM_ID,meta
 }
 let rows: RegisteredLaunch[],accounts:Map<string,RpcAccount>,pairs:unknown[],rpcBatches:string[][],dexBatches:string[][];
 function environment(): Env {
-  const statement: D1Statement = {
-    bind(){return statement;},async first(){throw new Error('Unexpected first');},async run(){throw new Error('Unexpected mutation');},
-    async all<T>(){return {success:true,results:structuredClone(rows) as T[]};},
-  };
-  const DB: D1Database = {prepare:() => statement};
+  const DB: D1Database = {prepare(sql){
+    let values:(string|number|null)[]=[];
+    const statement:D1Statement={
+      bind(...bound){values=bound;return statement;},
+      async first<T>(){if(sql==='SELECT * FROM launches WHERE cluster = ? AND mint = ?')return (structuredClone(rows.find(row=>row.cluster===values[0]&&row.mint===values[1]))??null) as T|null;throw new Error('Unexpected first: '+sql);},
+      async run(){throw new Error('Unexpected mutation');},
+      async all<T>(){if(!sql.startsWith('SELECT * FROM launches WHERE cluster = ?'))throw new Error('Unexpected all: '+sql);return {success:true,results:structuredClone(rows.filter(row=>row.cluster===values[0])) as T[]};},
+    };return statement;
+  }};
   return {DB,SOLANA_RPC_URL:'https://rpc.example'};
 }
 function quote(mint: string,price: string,liquidity = 1000) {

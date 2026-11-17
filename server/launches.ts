@@ -6,6 +6,7 @@ import { accountInfo,rpc } from './rpc';
 import { settings,verifyNetwork } from './settings';
 import { DBC_PROGRAM_ID } from '../src/lib/dbc';
 import { registerDbcLaunch } from './curves';
+import {assertWorldPayment} from './worlds';
 const MEMO_PROGRAM = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
 const SUPPLY = 1_000_000_000_000_000n;
 interface Receipt { app:'dominion';version:1;configVersion:string;mint:string;name:string;symbol:string }
@@ -80,19 +81,20 @@ export function verifyTransaction(tx: ParsedTransaction,signature: string,receip
   if (creatorIndex < 0 || amountAt(tx.meta.postTokenBalances,creatorIndex,receipt.mint,payer.pubkey,baseProgram,6,true) !== SUPPLY) invalid('L’offre initiale n’est pas présente sur le compte du créateur.');
   return {payer:payer.pubkey,mint:receipt.mint};
 }
-export async function registerLaunch(env: Env,signature: string): Promise<{created:boolean;launch:RegisteredLaunch}> {
-  const db = database(env),current = settings(env);
+export async function registerLaunch(env: Env,signature: string,worldId?:string): Promise<{created:boolean;launch:RegisteredLaunch}> {
+  const db = database(env),current = settings(env,worldId);
   const existing = await db.prepare('SELECT * FROM launches WHERE cluster = ? AND signature = ?').bind(current.cluster,signature).first<RegisteredLaunch>();
-  if (existing) return {created:false,launch:existing};
+  if (existing) {if(worldId)assertWorldPayment(worldId,existing.payment_mint);return {created:false,launch:existing};}
   if (env.CREATION_ENABLED !== 'true') throw new PublicError('La création est momentanément désactivée. Votre reçu peut être réessayé après réactivation.',503,'CREATION_DISABLED');
   await verifyNetwork(env);
   const tx = await rpc<ParsedTransaction | null>(current.privateRpc,'getTransaction',[signature,{encoding:'jsonParsed',commitment:'finalized',maxSupportedTransactionVersion:0}]);
   if (!tx) throw new PublicError('La transaction n’est pas encore finalisée. Réessayez ce même reçu, sans créer un nouveau token.',409,'TRANSACTION_PENDING');
   if (!tx.meta || tx.meta.err !== null) invalid('La transaction a échoué sur Solana.');
-  if (tx.transaction.message.instructions.some(ix => ix.programId === DBC_PROGRAM_ID.toBase58())) return registerDbcLaunch(env,signature,tx);
+  if (tx.transaction.message.instructions.some(ix => ix.programId === DBC_PROGRAM_ID.toBase58())) return registerDbcLaunch(env,signature,tx,worldId);
   const receipt = receiptFrom(tx);
   const saved = await db.prepare('SELECT * FROM configurations WHERE version = ? AND cluster = ?').bind(receipt.configVersion,current.cluster).first<SavedConfiguration>();
   if (!saved) throw new PublicError('Cette configuration de création n’a pas été publiée par la plateforme.',409,'CONFIGURATION_UNKNOWN');
+  if(worldId)assertWorldPayment(worldId,saved.payment_mint);
   const {payer,mint} = verifyTransaction(tx,signature,receipt,saved);
   const state = await rpc<RpcContext<RpcAccount | null>>(current.privateRpc,'getAccountInfo',[mint,{encoding:'base64',commitment:'finalized',minContextSlot:tx.slot}]);
   if (state.context.slot < tx.slot) throw new PublicError('Le RPC n’a pas encore atteint le slot de création.',409,'TRANSACTION_PENDING');

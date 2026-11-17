@@ -8,7 +8,7 @@ import {
 import type {PlatformConfig,CreateTokenInput,TradeInput,Token} from '../types';
 import {assertCompatibleQuoteMint} from './quoteMint';
 import {sendWalletTransaction,checkPending} from './transactions';
-export interface Phantom {isPhantom?:boolean;publicKey:PublicKey|null;connect():Promise<{publicKey:PublicKey}>;disconnect():Promise<void>;signTransaction(tx:Transaction):Promise<Transaction>;on?(name:string,cb:(key:PublicKey|null)=>void):void;removeListener?(name:string,cb:(key:PublicKey|null)=>void):void;}
+export interface Phantom {isPhantom?:boolean;publicKey:PublicKey|null;connect():Promise<{publicKey:PublicKey}>;disconnect():Promise<void>;signTransaction(tx:Transaction):Promise<Transaction>;signMessage?(message:Uint8Array):Promise<{signature:Uint8Array}>;on?(name:string,cb:(key:PublicKey|null)=>void):void;removeListener?(name:string,cb:(key:PublicKey|null)=>void):void;}
 declare global {interface Window {phantom?:{solana?:Phantom};solana?:Phantom;}}
 export function phantom():Phantom {const p=window.phantom?.solana??window.solana;if(!p?.isPhantom)throw new Error('Installe Phantom depuis phantom.app, puis ouvre cette page dans son navigateur ou avec son extension.');return p;}
 export const LAUNCH_SUPPLY=1_000_000_000_000_000n;
@@ -71,15 +71,16 @@ async function walletContext(config:PlatformConfig,operation:'create'|'trade'|'m
  if(await connection.getGenesisHash()!==expected)throw new Error('Le réseau RPC ne correspond pas au monde sélectionné.');
  return {provider,payer,connection};
 }
-const curveReceiptKey=(config:PlatformConfig,payer:PublicKey)=>`dominion-curve-receipt:${config.mode}:${config.quoteMint}:${config.curveVersion}:${config.treasury}:${payer.toBase58()}`;
+const scopedApi=(path:string,config:PlatformConfig)=>(config.worldId??'origin')==='origin'?path:`${path}?world=${encodeURIComponent(config.worldId!)}`;
+const curveReceiptKey=(config:PlatformConfig,payer:PublicKey)=>`dominion-curve-receipt:${config.worldId&&config.worldId!=='origin'?config.worldId+':':''}${config.mode}:${config.quoteMint}:${config.curveVersion}:${config.treasury}:${payer.toBase58()}`;
 async function registerCurveReceipt(signature:string,receiptKey:string,config:PlatformConfig):Promise<PlatformConfig>{
  let response:Response;
- try{response=await fetch('/api/curve-config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature})});}
+ try{response=await fetch(scopedApi('/api/curve-config',config),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature})});}
  catch{throw new CurveSetupPendingError(signature);}
  if(!response.ok){const body=await response.json().catch(()=>({error:'Enregistrement indisponible.'}));throw new CurveSetupPendingError(signature,body.error);}
- const currentResponse=await fetch('/api/config',{cache:'no-store'});if(!currentResponse.ok)throw new CurveSetupPendingError(signature);
+ const currentResponse=await fetch(scopedApi('/api/config',config),{cache:'no-store'});if(!currentResponse.ok)throw new CurveSetupPendingError(signature);
  const current:PlatformConfig=await currentResponse.json();
- if(current.quoteMint!==config.quoteMint||current.curveVersion!==config.curveVersion||!current.dbcConfig)throw new CurveSetupPendingError(signature,'Le monde a changé ; vérifie la configuration active.');
+ if((current.worldId??'origin')!==(config.worldId??'origin')||current.quoteMint!==config.quoteMint||current.curveVersion!==config.curveVersion||!current.dbcConfig)throw new CurveSetupPendingError(signature,'Le monde a changé ; vérifie la configuration active.');
  window.localStorage.removeItem(receiptKey);return current;
 }
 function checkPacket(transaction:Transaction,payer:PublicKey){

@@ -16,6 +16,12 @@ import { dbcInstructions } from '../server/curves';
 import { DBC_PROGRAM_ID,decodeDbcPool,decodeDbcConfig } from '../src/lib/dbc';
 import type { PlatformConfig } from '../src/types';
 import type { D1Database,D1Statement,Env,ParsedTransaction,RegisteredLaunch,RpcAccount,SavedCurve } from '../server/types';
+vi.mock('../config/worlds.json',async(importOriginal)=>{
+  const original=await importOriginal<{default:typeof import('../config/worlds.json')}>();
+  const fixture=(await import('./fixtures/dbc-launch.json')).default;
+  return {default:{...original.default,worlds:[...original.default.worlds,{id:'fixture',name:'Historical fixture',theme:'Test',week:99,status:'open',quoteMint:fixture.config.quoteMint,createdAt:'2026-11-16T00:00:00Z',launch:{initialMarketCapQuote:'10000',migrationMarketCapQuote:'1000000',tradingFeeBps:100}}]}};
+});
+
 const coder = new BorshCoder(createDbcProgram(new Connection('https://api.mainnet-beta.solana.com')).idl);
 const policy = fixture.config as PlatformConfig;
 let sqlite:DatabaseSync,env:Env,setup:ParsedTransaction|null,launch:ParsedTransaction|null,rawConfig:RpcAccount,rawPool:RpcAccount,rawMint:RpcAccount,dexPairs:unknown[];
@@ -31,6 +37,7 @@ function adapter(db:DatabaseSync):D1Database {
   }};
 }
 function request(path:string,signature?:string) {
+  if(path==='/api/launches'||path==='/api/curve-config')path+='?world=fixture';
   return worker.fetch(new Request(`https://dominion.example${path}`,signature ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature})} : undefined),env,ctx);
 }
 async function publishSetupHistory() {await recordConfiguration(env,{...policy,dbcConfig:null,tradingEnabled:false});}
@@ -46,7 +53,7 @@ function amendInstruction(tx:ParsedTransaction,name:string,change:(data:Record<s
   tx.transaction.message.instructions[decoded.index].data = bs58.encode(coder.instruction.encode(key,decoded.data));
 }
 beforeEach(async () => {
-  sqlite = new DatabaseSync(':memory:');sqlite.exec(readFileSync(new URL('../migrations/0001_registry.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('../migrations/0002_curves.sql',import.meta.url),'utf8'));
+  sqlite = new DatabaseSync(':memory:');sqlite.exec(readFileSync(new URL('../migrations/0001_registry.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('../migrations/0002_curves.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('../migrations/0004_worlds.sql',import.meta.url),'utf8'));
   env = {DB:adapter(sqlite),CREATION_ENABLED:'true',SOLANA_RPC_URL:'https://rpc.example'};
   setup = structuredClone(fixture.setupTransaction);launch = structuredClone(fixture.launchTransaction);
   rawConfig = raw(fixture.configAccount);rawPool = raw(fixture.poolAccount);rawMint = raw(fixture.mintAccount);dexPairs = [];
@@ -80,7 +87,7 @@ describe('Meteora shared curve registration',() => {
   });
   it('rejects a quote mint different from the saved platform policy',async () => {
     await publishSetupHistory();sqlite.prepare('UPDATE configurations SET payment_mint = ?').run(fixture.mint);
-    expect((await request('/api/curve-config',fixture.setupSignature)).status).toBe(422);
+    expect((await request('/api/curve-config',fixture.setupSignature)).status).toBe(409);
   });
   it('rejects canonical instruction parameter substitution even when the account address is genuine',async () => {
     amendInstruction(setup!,'createconfig2',data => {(data.configParameters as Record<string,unknown>).partnerPermanentLockedLiquidityPercentage = 0;});
