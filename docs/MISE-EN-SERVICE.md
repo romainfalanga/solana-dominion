@@ -6,7 +6,7 @@ La démonstration fonctionne sans token ni wallet. Le code est publié dans `rom
 
 ## GitHub et Cloudflare
 
-Le dépôt contient `cloudflare.config.ts`, le lockfile et la CI. La connexion Workers Builds est configurée sur la branche `main` du dépôt GitHub. Le déclencheur est nommé « Dominion — main ».
+Le dépôt contient `cloudflare.config.ts`, le lockfile et la CI. La connexion Workers Builds est configurée et vérifiée sur la branche `main` du dépôt GitHub. Le déclencheur est nommé « Dominion — main ».
 
 - Build : `npm test && npm run build` (Cloudflare installe déjà les dépendances avec le lockfile)
 - Deploy : `npm run deploy` (équivalent `cf deploy --prebuilt --mode production`)

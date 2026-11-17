@@ -9,7 +9,7 @@
 | R5 Mint configurable | Vérifié par tests API | QUOTE_MINT/QUOTE_SYMBOL, réseau, ownership, freeze ; ancien monde non migré |
 | R6 Cloudflare | Publié en démonstration | Worker solana-dominion, API/config en demo ; aucun actif réel |
 | R7 GitHub | Vérifié | Code poussé sur main ; CI GitHub web/browser/rust réussie, run 44076474495 |
-| R8 Liaison GitHub→Cloudflare | Configurée, déploiement à vérifier | Connexion dépôt et déclencheur Workers Builds créés pour main |
+| R8 Liaison GitHub→Cloudflare | Vérifié | Push sur main → build f2456eaa-48d3-4bcc-bea2-f8a09c985f70 réussi ; commande normale sans --force |
 | R9 Tests et sécurité | Réalisés dans périmètre décrit | 22 tests TypeScript/API, 6 tests Rust, 9 contrôles local-validator ; aucun audit externe |
 | R10 Économie mainnet | Non prête | Prix spot manipulable en faible liquidité ; gouvernance/indexation/admission à définir et vérifier |
 
@@ -38,3 +38,9 @@ Le même script Playwright a été exécuté sur l’URL Cloudflare publique ave
 ## Dépendances
 
 `npm audit --omit=dev` signale 9 entrées transitives (3 high, 6 moderate, 0 critical), notamment bigint-buffer via SPL et jayson/stream-json/uuid via web3.js. Aucune rétrogradation SPL 0.1.8 ni migration majeure automatique n’a été appliquée pour masquer ces résultats. Les versions sont verrouillées ; les chemins réellement embarqués font l’objet d’une revue décrite dans ../SECURITY.md. La dette de dépendances doit être traitée avant mainnet ; un audit npm ne constitue pas un audit blockchain.
+
+## GitHub et déploiement automatique vérifiés
+
+Le commit applicatif `8258270aa510a892a136e000d27e20be49e46c6c` est publié sur GitHub. La CI [44078102385](https://github.com/romainfalanga/solana-dominion/actions/runs/44078102385) réussit pour web, browser et rust. Le push a déclenché le build Cloudflare `f2456eaa-48d3-4bcc-bea2-f8a09c985f70`, terminé avec succès via `npm run deploy` sans forçage.
+
+La reprise de la publication initialement faite par API a nécessité une bascule unique expressément autorisée par le propriétaire (build `3f7005df-2d6e-4092-bc14-9ec8841f7b67`). L’option forcée a été retirée immédiatement après la création de ce build. Le déclencheur actuel ne la contient pas. Les modifications documentaires seules sont exclues des déploiements Cloudflare.
