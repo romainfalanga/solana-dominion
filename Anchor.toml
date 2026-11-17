@@ -1,0 +1,12 @@
+[toolchain]
+anchor_version = "0.31.1"
+[features]
+resolution = true
+skip-lint = false
+[programs.localnet]
+dominion = "Fg6PaFpoGXkYsidMpWxTWqkZ7FEfcYkgMQHHTPqzW8B"
+[programs.devnet]
+dominion = "Fg6PaFpoGXkYsidMpWxTWqkZ7FEfcYkgMQHHTPqzW8B"
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+target/
+.anchor/
+.cf/
+.env*
+!.env.example
+*-keypair.json
+playwright-report/
+test-results/
+.cloudflare/
+*.tsbuildinfo

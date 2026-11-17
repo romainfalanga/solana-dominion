@@ -1,0 +1,39 @@
+{
+  "name": "solana-dominion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "check": "tsc -b",
+    "preview": "vite preview --host 0.0.0.0",
+    "deploy": "cf deploy --prebuilt --mode production",
+    "test:localnet": "node scripts/test-localnet.mjs",
+    "test:ui": "node scripts/test-ui.mjs"
+  },
+  "dependencies": {
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4",
+    "buffer": "^6.0.3",
+    "d3-hierarchy": "^3.1.2",
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^2.0.0-rc.1",
+    "@types/d3-hierarchy": "^3.1.7",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "cf": "1.0.0-rc.0",
+    "esbuild": "^0.25.0",
+    "playwright": "^1.65.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.8",
+    "vitest": "^3.2.4"
+  }
+}
