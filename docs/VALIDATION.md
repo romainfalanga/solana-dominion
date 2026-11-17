@@ -12,11 +12,11 @@ Avec `--migration` : achat partiel atteignant le seuil, migration permissionless
 
 ## Simulation mainnet
 
-`scripts/simulate-dbc-mainnet.mjs` simule configuration + pool + achat de **1 CHOULE** contre le programme mainnet : `simulationError:null`, 184 820 unités de calcul, paquet 1 205 octets. La simulation utilise des métadonnées raccourcies ; le parcours utilisateur conserve deux transactions initiales pour ses métadonnées et son mémo complet. Aucun broadcast, aucune clé privée du propriétaire, aucune dépense réelle. `sigVerify:false` vérifie l’exécution, pas l’autorisation Phantom.
+`scripts/simulate-dbc-mainnet.mjs` simule configuration + pool + achat de **1 CHOULE** contre le programme mainnet : `simulationError:null`, 192 320 unités de calcul, paquet 1 205 octets. La simulation utilise des métadonnées raccourcies ; le parcours utilisateur conserve deux transactions initiales pour ses métadonnées et son mémo complet. Aucun broadcast, aucune clé privée du propriétaire, aucune dépense réelle. `sigVerify:false` vérifie l’exécution, pas l’autorisation Phantom.
 
 ## Application
 
-74 tests automatisés réussis : calcul économique, règles de compte, configurations, transactions incertaines, reçus expirés, preuves de lancement, politique historique, valorisation, token plateforme, rotation et conditions de migration. Les tests du registre utilisent les fixtures réelles et SQLite avec les migrations D1.
+82 tests automatisés réussis : calcul économique, règles de compte, configurations, transactions incertaines, reçus expirés, preuves de lancement, politique historique, valorisation, token plateforme, rotation et conditions de migration. Les tests du registre utilisent les fixtures réelles et SQLite avec les migrations D1.
 
 Tests UI avec lectures simulées : carte prioritaire, logo, CA copiable, absence des barres et de la page classement retirées, règles sans statistiques, devis d’achat initial, rejet des réponses périmées, minimum reçu inchangé pour achat/vente, quotes historiques, bouton migration, mobile 390/320 pixels sans débordement.
 
@@ -27,3 +27,7 @@ Aucune création réelle signée par le propriétaire n’a été effectuée. Au
 ## Interface de production
 
 Le bundle réel a passé le test Playwright avec le SDK DBC réel et un RPC de lecture sur fixture : estimation de 1 000 unités de quote, part de supply, deux signatures initiales, blocage sans Phantom, carte immédiate, logo, règles sans statistiques, absence de page classement et de sous-barre, écrans 390 et 320 px sans débordement. Aucun envoi de transaction. Le Worker compilé a également répondu HTTP 200 dans Miniflare avec D1 éphémère.
+
+## Token de paiement Pump avant graduation
+
+Le mint CHOULE est encore sur une courbe Pump et DexScreener ne fournit pas de paire pour ce mint. Le serveur vérifie le PDA, le programme propriétaire, le discriminateur, le layout, la quote SOL, les réserves et l’absence de graduation, puis convertit le prix virtuel via une paire WSOL/USDC liquide. Fixture mainnet publique conservée, sans clé privée. La capitalisation utilise l’offre actuelle du mint ; elle est notionnelle et ne mesure pas la liquidité disponible. Sans cours SOL/USD vérifiable, aucun prix USD n’est inventé.

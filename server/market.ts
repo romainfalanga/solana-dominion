@@ -8,20 +8,28 @@ import { assertCompatibleQuoteMint } from '../src/lib/quoteMint';
 import { PublicError,database,type Env,type RegisteredLaunch,type RpcAccount,type RpcContext,type SavedCurve } from './types';
 import { accountInfo,boundedJson,rpc } from './rpc';
 import { settings } from './settings';
+import {pumpQuotePrices,WRAPPED_SOL} from './pump';
 const COLORS = ['#60c2b1','#ad93e8','#ee9879','#7eb6df','#d9ba68','#d98eb7','#93bf78','#83a0e3'];
-interface DexPair { chainId?:string;pairAddress?:string;baseToken?:{address?:string};priceUsd?:string;liquidity?:{usd?:number};priceChange?:{h24?:number} }
+interface DexPair { chainId?:string;pairAddress?:string;baseToken?:{address?:string};quoteToken?:{address?:string};priceUsd?:string;liquidity?:{usd?:number};priceChange?:{h24?:number} }
 function colorFor(mint: string): string {let value = 0;for (const c of mint) value = ((value * 31) + c.charCodeAt(0)) >>> 0;return COLORS[value % COLORS.length];}
 async function prices(mints: string[]): Promise<Map<string,{price:number;change:number|null}>> {
   const selected = new Map<string,{price:number;change:number|null;liquidity:number;pair:string}>();
   for (let start = 0;start < mints.length;start += 30) {
     const batch = mints.slice(start,start + 30),wanted = new Set(batch);
     // Documented endpoint: https://docs.dexscreener.com/api/reference, maximum 30 addresses.
-    const response = await fetch(`https://api.dexscreener.com/tokens/v1/solana/${batch.join(',')}`,{headers:{Accept:'application/json'},signal:AbortSignal.timeout(8_000)});
-    const pairs = await boundedJson<DexPair[]>(response);
+    let response:Response|undefined;
+    for(let attempt=0;attempt<3;attempt++){
+      response=await fetch(`https://api.dexscreener.com/tokens/v1/solana/${batch.join(',')}`,{headers:{Accept:'application/json'},signal:AbortSignal.timeout(8_000)});
+      if(![429,502,503,504].includes(response.status)||attempt===2)break;
+      await response.body?.cancel();await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
+    }
+    if(!response!.ok)console.error(JSON.stringify({event:'upstream_http_error',provider:'dexscreener',operation:'token_prices',status:response!.status,batchSize:batch.length}));
+    const pairs = await boundedJson<DexPair[]>(response!);
     if (!Array.isArray(pairs)) throw new PublicError('Réponse de cotation non valide.');
     for (const pair of pairs) {
       const mint = pair.baseToken?.address;
       if (!mint || !wanted.has(mint) || pair.chainId !== 'solana') continue;
+      if(mint===WRAPPED_SOL&&!['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'].includes(pair.quoteToken?.address??''))continue;
       const price = Number(pair.priceUsd),liquidity = pair.liquidity?.usd ?? 0;
       if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(liquidity) || liquidity <= 0) continue;
       const previous = selected.get(mint),pairAddress = pair.pairAddress || '';
@@ -122,6 +130,14 @@ export async function readSnapshot(env: Env,config: PlatformConfig): Promise<Sna
   // conversion assets are priced without being added as extra territories.
   const requested = [...new Set([...tokens.map(token => token.mint),...curvePrices.values()].map(value => typeof value === 'string' ? value : value.quoteMint))];
   const quotes = cfg.cluster === 'mainnet-beta' ? await prices(requested) : new Map<string,{price:number;change:number|null}>();
+  if(cfg.cluster==='mainnet-beta'){
+    const paymentMints=[...new Set([platformAddress,...[...curvePrices.values()].map(curve=>curve.quoteMint)])].filter(mint=>!quotes.has(mint)&&mint!==WRAPPED_SOL);
+    const native=await pumpQuotePrices(cfg.privateRpc,paymentMints,latestSlot);
+    if(native.size){
+      const sol=(quotes.get(WRAPPED_SOL)??(await prices([WRAPPED_SOL])).get(WRAPPED_SOL));
+      if(sol)for(const [mint,price] of native)quotes.set(mint,{price:price*sol.price,change:null});
+    }
+  }
   for (const token of tokens) {
     const curve = curvePrices.get(token.mint),quote = curve ? quotes.get(curve.quoteMint) : quotes.get(token.mint);
     if (!quote) continue;

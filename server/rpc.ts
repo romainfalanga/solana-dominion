@@ -23,6 +23,7 @@ export async function rpc<T>(endpoint: string,method: string,params: unknown[]):
    await response.body?.cancel();
    await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
   }
+  if(!response!.ok)console.error(JSON.stringify({event:'upstream_http_error',provider:'solana',method,status:response!.status}));
   const envelope = await boundedJson<{result?:T;error?:unknown}>(response!);
   if (envelope.error || envelope.result === undefined) throw new PublicError('Lecture Solana impossible. Réessayez dans quelques instants.');
   return envelope.result;

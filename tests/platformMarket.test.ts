@@ -3,6 +3,8 @@ import { Buffer } from 'buffer';
 import { Keypair,PublicKey } from '@solana/web3.js';
 import { ExtensionType,MintLayout,TOKEN_PROGRAM_ID,TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 import { readSnapshot } from '../server/market';
+import pumpFixture from './fixtures/pump-quote.json';
+import {WRAPPED_SOL} from '../server/pump';
 import { layoutTerritories } from '../src/lib/territories';
 import type { PlatformConfig } from '../src/types';
 import type { D1Database,D1Statement,Env,RegisteredLaunch,RpcAccount } from '../server/types';
@@ -108,5 +110,36 @@ describe('platform token participates in the same territory competition',() => {
     rows = [registered(launched)];accounts.set(platform,mintAccount(2_000_000_000_000_000_000n,9,TOKEN_2022_PROGRAM_ID,true));
     accounts.set(launched,mintAccount(2_000_000_000_000_000n));
     await expect(readSnapshot(environment(),config(platform,TOKEN_2022_PROGRAM_ID,9))).rejects.toThrow('offre');
+  });
+});
+
+describe('native Pump fallback for payment assets only',()=>{
+  it('converts the verified native curve through a real WSOL/USDC quote',async()=>{
+    accounts.set(pumpFixture.mint,pumpFixture.mintAccount as unknown as RpcAccount);accounts.set(pumpFixture.curve,pumpFixture.curveAccount as unknown as RpcAccount);
+    pairs=[{...quote(WRAPPED_SOL,'73.45'),quoteToken:{address:'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'}}];
+    const token=(await readSnapshot(environment(),config(pumpFixture.mint,TOKEN_2022_PROGRAM_ID))).tokens[0];
+    const bytes=Buffer.from(pumpFixture.curveAccount.data[0],'base64'),expected=Number(bytes.readBigUInt64LE(16))/Number(bytes.readBigUInt64LE(8))*0.001*73.45;
+    expect(token.price).toBeCloseTo(expected,14);expect(token.marketCap).toBeCloseTo(expected*1e9,8);expect(token.change24h).toBeNull();
+    expect(dexBatches).toContainEqual([WRAPPED_SOL]);
+  });
+  it('does not invent a dollar conversion or use arbitrary WSOL cross-pairs',async()=>{
+    accounts.set(pumpFixture.mint,pumpFixture.mintAccount as unknown as RpcAccount);accounts.set(pumpFixture.curve,pumpFixture.curveAccount as unknown as RpcAccount);pairs=[{...quote(WRAPPED_SOL,'73.45'),quoteToken:{address:launched}}];
+    expect((await readSnapshot(environment(),config(pumpFixture.mint,TOKEN_2022_PROGRAM_ID))).tokens[0].marketCap).toBe(0);
+  });
+  it('never probes an arbitrary historical standard launch for Pump fallback',async()=>{
+    rows=[registered(launched)];accounts.set(platform,mintAccount(1_000_000_000n));accounts.set(launched,mintAccount(1_000_000_000n));pairs=[quote(platform,'1')];
+    await readSnapshot(environment(),config());expect(rpcBatches).toEqual([[launched,platform]]);
+  });
+});
+
+describe('transient quote provider failures',()=>{
+  it('retries a DexScreener503 instead of treating it as an absent market',async()=>{
+    accounts.set(platform,mintAccount(1_000_000_000n));pairs=[quote(platform,'2')];
+    const original=fetch;let dexAttempts=0;
+    vi.stubGlobal('fetch',vi.fn(async(url: string | URL | Request,init?:RequestInit)=>{
+      if(String(url).startsWith('https://api.dexscreener.com/')&&++dexAttempts===1)return new Response('temporarily unavailable',{status:503});
+      return original(url,init);
+    }));
+    expect((await readSnapshot(environment(),config())).tokens[0].marketCap).toBe(2000);expect(dexAttempts).toBe(2);
   });
 });

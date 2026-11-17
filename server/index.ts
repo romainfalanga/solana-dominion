@@ -15,7 +15,7 @@ function securityHeaders(env: Env): Headers {
 }
 function cacheKey(origin: string,path: string,env: Env): Request {
   const cfg = settings(env),url = new URL(origin + path);
-  url.searchParams.set('schema','registry-dbc-2');
+  url.searchParams.set('schema','registry-dbc-3');
   url.searchParams.set('config',JSON.stringify([cfg.cluster,cfg.paymentMint,cfg.treasury,cfg.publicRpc,env.CREATION_ENABLED === 'true',cfg.launch]));
   return new Request(url.toString());
 }
