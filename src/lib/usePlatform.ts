@@ -11,7 +11,7 @@ async function register(signature:string):Promise<boolean>{const res=await fetch
 function readDemo():Snapshot{try{const data=JSON.parse(localStorage.getItem(STORE)||'null');if(data?.source==='demo'&&Array.isArray(data.tokens)&&data.tokens.length<=100)return data;}catch{}return initialDemo();}
 async function stateRequest(){const res=await fetch('/api/state',{signal:AbortSignal.timeout(20000)});if(!res.ok){const data=await res.json().catch(()=>({}));throw new Error(data.error||'Impossible de vérifier les données Solana.');}return res.json() as Promise<{config:PlatformConfig;snapshot:Snapshot}>;}
 export function usePlatform(){
- const [config,setConfig]=useState<PlatformConfig>({...demoConfig,creationEnabled:false}),[snapshot,setSnapshot]=useState<Snapshot>({tokens:[],updatedAt:'',slot:null,source:'chain',currency:'USD'}),[loading,setLoading]=useState(true),[error,setError]=useState<string|null>(null),[wallet,setWallet]=useState<string|null>(null),[busy,setBusy]=useState(false),[notice,setNotice]=useState<string|null>(null);
+ const [config,setConfig]=useState<PlatformConfig>({...demoConfig,mode:import.meta.env.DEV?'demo':'mainnet-beta',quoteSymbol:import.meta.env.DEV?'DOM':'…',creationEnabled:false}),[snapshot,setSnapshot]=useState<Snapshot>({tokens:[],updatedAt:'',slot:null,source:'chain',currency:'USD'}),[loading,setLoading]=useState(true),[error,setError]=useState<string|null>(null),[wallet,setWallet]=useState<string|null>(null),[busy,setBusy]=useState(false),[notice,setNotice]=useState<string|null>(null);
  const ready=useRef(false),lock=useRef(false),refreshing=useRef(false),configRef=useRef(config);
  const refresh=useCallback(async()=>{
  if(refreshing.current)return;refreshing.current=true;
