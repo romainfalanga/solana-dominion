@@ -43,3 +43,7 @@ Les départs Publicnode sont espacés de 600 ms par isolate et les lectures iden
 ## État de la publication
 
 Commit applicatif `4bf6836` : déploiement Cloudflare réussi ; CI GitHub `44101757787` réussie (web et navigateur). Le contrôle public sans mocks échoue encore au chargement de la carte après 60 secondes. Les erreurs observées côté Worker sont Publicnode 429 et RPC officiel 403. Ne pas considérer ce contrôle public comme réussi. Attente d’un accès RPC dédié au projet, puis reprise des lectures publiques et du formulaire sans signature.
+
+## Blocage RPC résolu
+
+Un RPC mainnet dédié a été configuré et vérifié, puis sa clé renouvelée et stockée en secret. L’API wallet renvoie 29 positions réelles dont une sans cours, sans exposer le secret. Le navigateur public affiche les 29 lignes avec un adaptateur de connexion en lecture seule fournissant l’adresse publique ; les données API ne sont pas simulées. Le contrôle public initial (carte, logo, mobile, règles et devis SDK de 1 CHOULE) passe également sans mocks : estimation 98 990,297815 tokens pour la courbe par défaut. Aucun achat ni lancement mainnet n’est effectué.

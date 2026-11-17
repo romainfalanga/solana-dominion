@@ -27,3 +27,7 @@ Tests serveur : agrégation SPL/Token-2022, soldes natifs, propriétaire/program
 ## Publication vérifiée
 
 La révision `2acb3c4` a été déployée sur Cloudflare, avec CI GitHub réussie et 105 tests unitaires. Le navigateur public sans mocks confirme le menu Wallet, l’état déconnecté, l’absence de débordement mobile et d’erreur JavaScript. La route rejette un propriétaire invalide avec HTTP 400. La lecture publique du wallet fourni renvoie encore SERVICE_UNAVAILABLE : les soldes réels en production ne sont donc pas déclarés validés. Aucun fonds ni signature du propriétaire n’a été utilisé.
+
+## Résolution de l’accès RPC
+
+Le RPC Mainnet dédié est maintenant configuré comme secret Cloudflare `SOLANA_RPC_URL`, avec déclaration `bindings.secret()` dans la configuration de déploiement ; aucune clé n’est versionnée. Après remplacement de la clé, le contrôle de lecture réel renvoie 29 positions, dont une sans cours disponible, pour l’adresse publique fournie. Le navigateur public affiche les 29 lignes sans erreur via un adaptateur de test qui fournit seulement cette adresse, avec API réelle et sans signature.
