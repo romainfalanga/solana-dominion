@@ -48,10 +48,19 @@ Aucun scrutin réel ne doit s’ouvrir avec des poids de démonstration. L’abs
 | R3 Interface | Sélection des mondes, gouvernance, Wallet préservé | Implémenté, tests réussis |
 | R4 Vote pondéré | Snapshot cohérent, signature, vote unique, poids entiers | Implémenté, tests réussis |
 | R5 Exploitation | Préparation des rounds, activation manuelle vérifiée, aucun mint fictif | Implémenté, tests réussis |
-| R6 Livraison | Tests, contrôle indépendant, déploiement normal et lecture publique | Tests locaux réussis ; publication à vérifier |
+| R6 Livraison | Tests, contrôle indépendant, déploiement normal et lecture publique | Vérifié en production : commit 445850e, CI et Cloudflare réussis |
 
 ## Validation de cette livraison
 
 133 tests unitaires et intégration passent ; compilation production réussie. Trois parcours navigateur passent : launchpad existant, Wallet, mondes et gouvernance (consentement, message lié au scrutin/domaine/mint, domaine tiers refusé, course de changement de monde, mobile 320 px). Les migrations ont été vérifiées sur SQLite réel avec données historiques et contraintes d’unicité, puis appliquées dans D1 sans suppression de données.
 
 Une revue indépendante a conduit à ajouter la résolution des prix des tokens locaux issus de courbes DBC, ainsi que le registre immuable des scrutins en D1 et des lectures groupées. Aucun scrutin réel, mint GTA 6 ni transaction mainnet signée n’a été créé pendant cette validation. Le fonctionnement opérateur des snapshots est documenté dans [GOVERNANCE.md](GOVERNANCE.md).
+
+## Vérification publique après déploiement
+
+Commit applicatif `445850e6671bb13d6df0d9cc2edd395606ccf697`, build Cloudflare `d5c740a2-991f-42a1-8c53-4f675e245c36` réussi, commande normale `npm run deploy`. GitHub Actions : jobs web et browser réussis. API santé : version `0.4.0`, architecture `meteora-dbc-multiworld`.
+
+Parcours navigateur public avec API réelles et adaptateur de seule adresse publique (aucune capacité de signature) : 1 territoire valorisé sur Origin, GTA 6 en attente sans carte/actions, gouvernance sans scrutin fictif, 29 positions du wallet, retour à Origin et mobile 320 px sans débordement ni erreur JavaScript. Secret `SOLANA_RPC_URL` toujours de type `secret_text`, même identifiant D1. Aucun transfert ni création mainnet.
+
+Restent les données réelles nécessaires à l’ouverture : mint du memecoin GTA 6 et paramètres de sa courbe ; candidats, quorum, calendrier et snapshot vérifié pour le premier scrutin. Les collecteurs et parcours de vote sont codés et testés, mais aucun scrutin public n’a été ouvert. L’exécution hebdomadaire nécessite publication du snapshot et enregistrement du memecoin créé par un signataire ; pas de création autonome ni gouvernance exécutée onchain.
+
