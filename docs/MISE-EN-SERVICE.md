@@ -8,12 +8,12 @@ La démonstration fonctionne sans token ni wallet. Le code est publié dans `rom
 
 Le dépôt contient `cloudflare.config.ts`, le lockfile et la CI. La connexion Workers Builds est configurée sur la branche `main` du dépôt GitHub. Le déclencheur est nommé « Dominion — main ».
 
-- Build : `npm ci && npm test && npm run build`
+- Build : `npm test && npm run build` (Cloudflare installe déjà les dépendances avec le lockfile)
 - Deploy : `npm run deploy` (équivalent `cf deploy --prebuilt --mode production`)
 - Racine : `/`
 - Node : 24
 
-Le déclencheur réutilise l’autorisation Workers Builds existante « potentielmemecoin build token », conservée dans Cloudflare ; aucun secret n’a été copié dans GitHub. L’API OAuth ne permet pas de créer ou inspecter les tokens personnels. Préférer un token dédié à Dominion lors de la prochaine configuration des droits ; ne pas révoquer le token partagé sans vérifier ses autres usages. Le premier déploiement est vérifié avant de considérer l’automatisation opérationnelle.
+Le déclencheur réutilise l’autorisation Workers Builds existante « potentielmemecoin build token », conservée dans Cloudflare ; aucun secret n’a été copié dans GitHub. L’API OAuth ne permet pas de créer ou inspecter les tokens personnels. Préférer un token dédié à Dominion lors de la prochaine configuration des droits ; ne pas révoquer le token partagé sans vérifier ses autres usages. Les modifications exclusivement documentaires sont exclues des déploiements pour éviter des compilations inutiles.
 
 ## Première session Solana devnet
 

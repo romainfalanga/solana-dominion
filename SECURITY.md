@@ -21,3 +21,7 @@ Le prix spot d’un pool très peu liquide permet une capitalisation apparente t
 Aucun secret utilisateur n’est stocké par le serveur. Les signatures passent par Phantom. Les clés éphémères de mint servent uniquement à créer un compte et ne possèdent plus l’autorité mint après la création. Les clés de programme/upgrade ne doivent jamais être committées. Le verrou UI TRADING_ENABLED n’est pas une pause on-chain.
 
 En cas de confirmation incertaine, vérifier la signature retournée sur Explorer avant toute nouvelle tentative. Ne jamais demander à un utilisateur sa phrase de récupération.
+
+## Mise à jour de l’outillage
+
+Vitest a été migré vers 5.1.0 après détection des alertes critiques tinypool et de l’ancienne chaîne mocker. Les 22 tests et le build passent. L’audit complet après migration signale désormais 0 critical, 3 high et 6 moderate, correspondant aux dépendances Solana déjà analysées ci-dessus.
