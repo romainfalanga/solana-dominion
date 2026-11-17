@@ -39,3 +39,7 @@ Le contrôle en production a identifié des réponses HTTP 429 à getMultipleAcc
 Pour les petits lots de 1 à 3 comptes limités sur getMultipleAccounts, le lecteur utilise getAccountInfo avec deux lectures simultanées maximum. Les valeurs nulles, l’ordre, les options et les slots réels sont conservés ; un contexte antérieur au minimum demandé est refusé.
 
 Les départs Publicnode sont espacés de 600 ms par isolate et les lectures identiques simultanées partagent seulement leur exécution, sans cache permanent. Un refus 403 du secours coupe ses nouvelles tentatives pendant cinq minutes. Cette réduction de charge ne remplace pas un RPC dédié lorsque les endpoints publics restent limités.
+
+## État de la publication
+
+Commit applicatif `4bf6836` : déploiement Cloudflare réussi ; CI GitHub `44101757787` réussie (web et navigateur). Le contrôle public sans mocks échoue encore au chargement de la carte après 60 secondes. Les erreurs observées côté Worker sont Publicnode 429 et RPC officiel 403. Ne pas considérer ce contrôle public comme réussi. Attente d’un accès RPC dédié au projet, puis reprise des lectures publiques et du formulaire sans signature.
