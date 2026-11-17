@@ -23,7 +23,7 @@ async function prices(mints: string[]): Promise<Map<string,{price:number;change:
       if(![429,502,503,504].includes(response.status)||attempt===2)break;
       await response.body?.cancel();await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
     }
-    if(!response!.ok)console.error(JSON.stringify({event:'upstream_http_error',provider:'dexscreener',operation:'token_prices',status:response!.status,batchSize:batch.length}));
+    if(!response!.ok){console.error(JSON.stringify({event:'upstream_http_error',provider:'dexscreener',operation:'token_prices',status:response!.status,batchSize:batch.length}));throw new PublicError('La cotation DexScreener est momentanément indisponible.',503,'MARKET_DATA_UNAVAILABLE');}
     const pairs = await boundedJson<DexPair[]>(response!);
     if (!Array.isArray(pairs)) throw new PublicError('Réponse de cotation non valide.');
     for (const pair of pairs) {
