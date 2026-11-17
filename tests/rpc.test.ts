@@ -9,7 +9,7 @@ function transport(handler:(url:string,method:string,params:unknown[])=>Response
 describe('read-only public mainnet RPC failover',()=>{
  it('switches immediately on429, checks genesis, and preserves finalized minContextSlot exactly',async()=>{
   transport((url,method)=>url===primary?new Response('',{status:429,headers:{'Retry-After':'60'}}):answer(method==='getGenesisHash'?genesis:{context:{slot:500},value:[null]}));
-  const {rpc}=await import('../server/rpc');const params=[['mint'],{encoding:'base64',commitment:'finalized',minContextSlot:499}];
+  const {rpc}=await import('../server/rpc');const params=[['mint1','mint2','mint3','mint4'],{encoding:'base64',commitment:'finalized',minContextSlot:499}];
   expect(await rpc(primary,'getMultipleAccounts',params)).toEqual({context:{slot:500},value:[null]});
   expect(calls).toEqual([{url:primary,method:'getMultipleAccounts',params},{url:official,method:'getGenesisHash',params:[]},{url:official,method:'getMultipleAccounts',params}]);
   await rpc(primary,'getMultipleAccounts',params);expect(calls).toHaveLength(4);expect(calls.at(-1)).toEqual({url:official,method:'getMultipleAccounts',params});
@@ -38,5 +38,28 @@ describe('read-only public mainnet RPC failover',()=>{
   const {rpc}=await import('../server/rpc');await rpc(primary,'getTransaction',['receipt']);vi.setSystemTime(Date.now()+20_000);await rpc(primary,'getTransaction',['receipt']);
   expect(calls.filter(c=>c.url===primary)).toHaveLength(1);vi.setSystemTime(Date.now()+41_000);await rpc(primary,'getTransaction',['receipt']);
   expect(calls.filter(c=>c.url===primary)).toHaveLength(2);expect(calls.filter(c=>c.method==='getGenesisHash')).toHaveLength(2);
+ });
+});
+
+describe('small rate-limited account batch decomposition',()=>{
+ it('preserves nulls, order, exact options and minimum actual slot with at most two requests in flight',async()=>{
+  let active=0,peak=0;const options={commitment:'finalized',encoding:'base64',minContextSlot:100,dataSlice:{offset:0,length:82}};
+  vi.stubGlobal('fetch',vi.fn(async(url,init)=>{
+    const body=JSON.parse(init.body);calls.push({url:String(url),...body});
+    if(body.method==='getMultipleAccounts')return new Response('',{status:429});
+    expect(String(url)).toBe(primary);expect(body.method).toBe('getAccountInfo');expect(body.params[1]).toEqual(options);
+    active++;peak=Math.max(peak,active);await new Promise(resolve=>setTimeout(resolve,5));active--;
+    const index=['a','b','c'].indexOf(body.params[0]);return answer({context:{slot:[103,101,105][index]},value:index===1?null:{address:body.params[0]}});
+  }));
+  const {rpc}=await import('../server/rpc');const result=await rpc(primary,'getMultipleAccounts',[['a','b','c'],options]);
+  expect(result).toEqual({context:{slot:101},value:[{address:'a'},null,{address:'c'}]});expect(peak).toBe(2);
+  await rpc(primary,'getMultipleAccounts',[['a','b','c'],options]);expect(calls.filter(call=>call.method==='getMultipleAccounts')).toHaveLength(1);
+ });
+ it('rejects stale individual context and never decomposes403 or large batches',async()=>{
+  transport((_url,method)=>method==='getMultipleAccounts'?new Response('',{status:429}):answer({context:{slot:99},value:null}));
+  const {rpc}=await import('../server/rpc');await expect(rpc(primary,'getMultipleAccounts',[['a'],{minContextSlot:100}])).rejects.toMatchObject({code:'SOLANA_RPC_CONTEXT_MISMATCH'});
+  vi.resetModules();calls=[];transport(()=>new Response('',{status:403}));const other=await import('../server/rpc');
+  await expect(other.rpc(primary,'getMultipleAccounts',[['a'],{minContextSlot:100}])).rejects.toMatchObject({code:'SOLANA_RPC_UNAVAILABLE'});expect(calls.map(call=>call.method)).toEqual(['getMultipleAccounts']);
+  // The separate failover test uses four accounts and asserts official RPC batching.
  });
 });

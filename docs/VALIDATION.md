@@ -16,7 +16,7 @@ Avec `--migration` : achat partiel atteignant le seuil, migration permissionless
 
 ## Application
 
-87 tests automatisés réussis : calcul économique, règles de compte, configurations, transactions incertaines, reçus expirés, preuves de lancement, politique historique, valorisation, token plateforme, rotation et conditions de migration. Les tests du registre utilisent les fixtures réelles et SQLite avec les migrations D1.
+89 tests automatisés réussis : calcul économique, règles de compte, configurations, transactions incertaines, reçus expirés, preuves de lancement, politique historique, valorisation, token plateforme, rotation et conditions de migration. Les tests du registre utilisent les fixtures réelles et SQLite avec les migrations D1.
 
 Tests UI avec lectures simulées : carte prioritaire, logo, CA copiable, absence des barres et de la page classement retirées, règles sans statistiques, devis d’achat initial, rejet des réponses périmées, minimum reçu inchangé pour achat/vente, quotes historiques, bouton migration, mobile 390/320 pixels sans débordement.
 
@@ -35,3 +35,5 @@ Le mint CHOULE est encore sur une courbe Pump et DexScreener ne fournit pas de p
 ## Limitation du RPC public
 
 Le contrôle en production a identifié des réponses HTTP 429 à getMultipleAccounts sur Publicnode. Le serveur bascule ces lectures vers le RPC officiel mainnet, vérifie son genesis et conserve les paramètres de finalité/minContextSlot. Le délai Retry-After est respecté par fournisseur et méthode ; les endpoints privés et personnalisés ne sont pas redirigés. Les méthodes d’envoi de transaction sont refusées par ce lecteur serveur.
+
+Pour les petits lots de 1 à 3 comptes limités sur getMultipleAccounts, le lecteur utilise getAccountInfo avec deux lectures simultanées maximum. Les valeurs nulles, l’ordre, les options et les slots réels sont conservés ; un contexte antérieur au minimum demandé est refusé.
