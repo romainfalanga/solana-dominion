@@ -23,3 +23,7 @@ La disponibilité des RPC et des cotations reste nécessaire. Les erreurs sont a
 ## Vérifications
 
 Tests serveur : agrégation SPL/Token-2022, soldes natifs, propriétaire/programme, décimales, cours manquants, Pump, métadonnées, absence de cache et erreurs réseau. Tests navigateur de production avec fixtures explicites : répartition 75/25, recherche sans changement des poids, changement de compte pendant une requête, déconnexion, wallet vide, absence de prix, erreur RPC et affichage 320/390 px. Aucun wallet réel n’est signé par ces tests.
+
+## Publication vérifiée
+
+La révision `2acb3c4` a été déployée sur Cloudflare, avec CI GitHub réussie et 105 tests unitaires. Le navigateur public sans mocks confirme le menu Wallet, l’état déconnecté, l’absence de débordement mobile et d’erreur JavaScript. La route rejette un propriétaire invalide avec HTTP 400. La lecture publique du wallet fourni renvoie encore SERVICE_UNAVAILABLE : les soldes réels en production ne sont donc pas déclarés validés. Aucun fonds ni signature du propriétaire n’a été utilisé.

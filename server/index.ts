@@ -72,7 +72,7 @@ export default {
       else response = env.ASSETS ? await env.ASSETS.fetch(request) : new Response('Not found',{status:404});
     } catch (error) {
       console.error(JSON.stringify({event:'request_failed',path:url.pathname,type:error instanceof PublicError ? error.code : 'INTERNAL_ERROR'}));
-      response = json({error:error instanceof PublicError ? error.message : 'Impossible de vérifier les données. Réessayez sans envoyer de nouvelle transaction.',code:error instanceof PublicError ? error.code : 'SERVICE_UNAVAILABLE'},error instanceof PublicError ? error.status : 503);
+      response = json({error:error instanceof PublicError ? error.message : url.pathname === '/api/wallet' ? 'Lecture du wallet indisponible. Réessayez dans quelques instants.' : 'Impossible de vérifier les données. Réessayez sans envoyer de nouvelle transaction.',code:error instanceof PublicError ? error.code : 'SERVICE_UNAVAILABLE'},error instanceof PublicError ? error.status : 503);
       if (error instanceof PublicError && error.code === 'TRANSACTION_PENDING') response.headers.set('Retry-After','4');
     }
     const headers = new Headers(response.headers);security.forEach((value,key) => headers.set(key,value));
